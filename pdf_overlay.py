@@ -6,6 +6,37 @@ from reportlab.lib.pagesizes import letter
 import fonts
 
 
+# fallback characters to use for looking up offsets
+CHAR_MAP = {
+    "Ä": "A",
+    "Ö": "O",
+    "Ü": "U",
+    "ä": "a",
+    "ö": "o",
+    "ü": "u",
+    "Á": "A",
+    "É": "E",
+    "Í": "I",
+    "Ó": "O",
+    "Ú": "U",
+    "á": "a",
+    "é": "e",
+    "í": "i",
+    "ó": "o",
+    "ú": "u",
+    "À": "A",
+    "È": "E",
+    "Ì": "I",
+    "Ò": "O",
+    "Ù": "U",
+    "à": "a",
+    "è": "e",
+    "ì": "i",
+    "ò": "o",
+    "ù": "u",
+}
+
+
 def get_emphasized_part(word_chars):
     if len(word_chars) < 2:
         return []
@@ -59,8 +90,8 @@ def add_text_overlay(input_pdf_path, output_pdf_path, use_extrabold=False):
             for word in words:
                 word_str = "".join(char["text"] for char in word)
 
-                if word_str == "Amt":
-                    print("break")
+                # if word_str == "Amt":
+                #     print("break")
 
                 chars = get_emphasized_part(word)
                 if not chars:
@@ -70,8 +101,8 @@ def add_text_overlay(input_pdf_path, output_pdf_path, use_extrabold=False):
                 font_name = chars[0]["fontname"]
                 font_names.add(font_name)
 
-                if font_name == 'VTEMCQ+Chivo-Bold':
-                    print("break")
+                # if font_name == 'CVDRPC+DGMetaSerifScience-Italic':
+                #     print("break")
 
                 if not fonts.setup_boldened_font(c, font_name, font_size, use_extrabold):
                     continue
@@ -82,7 +113,8 @@ def add_text_overlay(input_pdf_path, output_pdf_path, use_extrabold=False):
                     if c._char_offsets is None:
                         dx, dy = 0, 0
                     else:
-                        dx, dy = c._char_offsets.get(character, (0, 0))
+                        offset_char = CHAR_MAP.get(character, character)
+                        dx, dy = c._char_offsets.get(offset_char, (0, 0))
                     c.drawString(x + dx, y + dy, character)
 
             c.showPage()  # new page
