@@ -1,4 +1,4 @@
-import math, re
+import math, re, os
 import pdfplumber
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
@@ -107,7 +107,7 @@ def add_text_overlay(input_pdf_path, output_pdf_path, use_extrabold=False):
         writer.write(output_file)
 
     # Clean up temporary overlay file
-    # os.remove(overlay_pdf)
+    os.remove(overlay_pdf)
 
 
 if __name__ == "__main__":
