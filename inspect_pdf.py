@@ -6,7 +6,7 @@ if __name__ == "__main__":
     pdf_path = "sample3.pdf"
     html_path = "sample3.html"
 
-    with open(html_path, "w") as html:
+    with open(html_path, "w", encoding="utf-8") as html:
         html.write("<html><body>\n")
 
         with pdfplumber.open(pdf_path) as pdf:
