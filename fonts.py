@@ -15,6 +15,7 @@ FONT_MAP = {
     "CMSS(\d|\d\d)": "ComputerModernSans",
     "CMR(\d|\d\d)": "ComputerModernSerif",
     "CMTI(\d|\d\d)": "ComputerModernSerif-Italic",
+    "CMBX(\d|\d\d)": "ComputerModernSerif-Bold",
     "TimesNewer": "TimesNewerRoman",
 }
 
