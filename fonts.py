@@ -17,6 +17,8 @@ FONT_MAP = {
     "CMTI(\d|\d\d)": "ComputerModernSerif-Italic",
     "CMBX(\d|\d\d)": "ComputerModernSerif-Bold",
     "TimesNewer": "TimesNewerRoman",
+    "DGMetaSerifScience": "DeGruyterSerif",
+    "DGMetaScience": "DeGruyterSans",
 }
 
 
@@ -104,11 +106,6 @@ def _disambiguate_identifier(pdf_identifier: str) -> str:
     if m := re.match(r"^[A-Z]+\+(.+)$", family_name):
         family_name = m.group(1)
 
-    # Attempt to resolve via FONT_MAP
-    for pattern, replacement in FONT_MAP.items():
-        if m := re.match(pattern, family_name):
-            return replacement
-
     # Strip Monotype suffix if any
     family_name = family_name.removesuffix("MT")
 
@@ -119,6 +116,12 @@ def _disambiguate_identifier(pdf_identifier: str) -> str:
 
     # Strip PostScript suffix if any
     family_name = family_name.removesuffix("PS")
+
+    # Attempt replacement via FONT_MAP
+    for pattern, replacement in FONT_MAP.items():
+        if m := re.match(f"^{pattern}$", family_name):
+            family_name = replacement
+            break
 
     if len(splits) == 1:
         return family_name
