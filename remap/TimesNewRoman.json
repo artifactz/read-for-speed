@@ -1,8 +1,7 @@
 {
   "base_font": "TimesNewRoman",
-  "base_font_path": "trash/fonts/TimesNewRoman.ttf",
   "overlay_font": "TimesNewerRoman-Bold",
-  "overlay_font_path": "trash/fonts/TimesNewerRoman-Bold.otf",
+  "overlay_font_path": "fonts/TimesNewerRoman-Bold.otf",
   "font_scale": 1.0095486111111112,
   "total_overlap": 3493.7620915032685,
   "offsets": {

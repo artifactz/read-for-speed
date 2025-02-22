@@ -1,6 +1,5 @@
 {
   "base_font": "Arial-Italic",
-  "base_font_path": "trash/fonts/Arial-Italic.ttf",
   "overlay_font": "LiberationSans-BoldItalic",
   "overlay_font_path": "fonts/LiberationSans-BoldItalic.ttf",
   "font_scale": 1.05859375,
