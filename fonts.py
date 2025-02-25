@@ -16,9 +16,11 @@ FONT_MAP = {
     "CMR(\d|\d\d)": "ComputerModernSerif",
     "CMTI(\d|\d\d)": "ComputerModernSerif-Italic",
     "CMBX(\d|\d\d)": "ComputerModernSerif-Bold",
-    "TimesNewer": "TimesNewerRoman",
     "DGMetaSerifScience": "DeGruyterSerif",
     "DGMetaScience": "DeGruyterSans",
+    "STIXGeneral": "STIXTwoText",
+    "Times": "TimesNewRoman",
+    "TimesNewer": "TimesNewerRoman",
 }
 
 
