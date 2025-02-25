@@ -1,4 +1,5 @@
-import math, re, os
+import math, re, os, tempfile
+from tqdm import tqdm
 import pdfplumber
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
@@ -42,6 +43,8 @@ def get_emphasized_part(word_chars):
         return []
 
     word = "".join(char["text"] for char in word_chars)
+
+    # Word consists of digits, optionally followed by up to 2 letters, or is upper case
     if re.match(r"^\d+(?:\w|\w\w)?$", word) or word == word.upper():
         return []
 
@@ -57,12 +60,14 @@ def group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>Â
         if word and prev_char:
             is_newline = prev_char["y0"] > char["y1"]
             was_hyphen = prev_char["text"] == "-"
-            
+
             if (
                 is_newline != was_hyphen or  # Unhyphenated new line or hyphen but no new line
                 char["x0"] - prev_char["x1"] > offset_threshold or  # Space between words
                 (abs(char["x0"] - prev_char["x1"]) > offset_threshold and
                  abs(char["matrix"][5] - prev_char["matrix"][5]) > offset_threshold) or  # New paragraph
+                char["fontname"] != prev_char["fontname"] or  # Different font
+                char["size"] != prev_char["size"] or  # Different font size
                 char["text"] in non_word_chars  # Word-breaking char
             ):
                 words.append(word)
@@ -76,67 +81,85 @@ def group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>Â
     return words
 
 
-def add_text_overlay(input_pdf_path, output_pdf_path, use_extrabold=False):
+def generate_text_overlay(input_pdf_path, use_extrabold=False):
+    """Generates an overlay pdf document and returns its path."""
+
+    input_font_names = set()
+
+    print("Reading document.")
+    with pdfplumber.open(input_pdf_path) as input_pdf:
+        with tempfile.NamedTemporaryFile(delete=False, suffix="_overlay.pdf") as overlay_pdf:
+
+            # Create overlay document
+            c = canvas.Canvas(overlay_pdf, pagesize=letter)
+
+            for page in tqdm(input_pdf.pages, "Generating overlay pages"):
+                words = group_words(page.chars)
+
+                # reportlab starts with its default font on every page
+                current_font = None
+                current_font_is_valid = False
+
+                for word in words:
+                    word_str = "".join(char["text"] for char in word)  # useful when debugging
+
+                    chars = get_emphasized_part(word)
+                    if not chars:
+                        continue
+
+                    font_size = chars[0]["size"]
+                    font_name = chars[0]["fontname"]
+
+                    if (font_name, font_size) != current_font:
+                        current_font = (font_name, font_size)
+                        input_font_names.add(font_name)
+                        if not fonts.setup_boldened_font(c, font_name, font_size, use_extrabold):
+                            current_font_is_valid = False
+                            continue
+                        current_font_is_valid = True
+
+                    if not current_font_is_valid:
+                        continue
+
+                    for char in chars:
+                        x = char["x0"]
+                        y = char["matrix"][5]
+                        character = char["text"]
+                        if c._char_offsets is None:
+                            dx, dy = 0, 0
+                        else:
+                            offset_char = CHAR_MAP.get(character, character)
+                            dx, dy = c._char_offsets.get(offset_char, (0, 0))
+                        c.drawString(x + dx, y + dy, character)
+
+                c.showPage()  # new page
+
+            c.save()
+
+    print("Document fonts:", input_font_names)
+    print("Missing fonts:", fonts._missing_fonts)
+
+    return overlay_pdf.name
+
+
+def add_text_overlay(input_pdf_path, output_pdf_path):
     """Adds text overlay to the input PDF and saves as output PDF."""
 
-    # Temporary file for overlay
-    overlay_pdf = "overlay.pdf"
-    font_names = set()
-
-    with pdfplumber.open(input_pdf_path) as pdf:
-        # Create an overlay PDF
-        c = canvas.Canvas(overlay_pdf, pagesize=letter)
-
-        for page_number, page in enumerate(pdf.pages):
-            words = group_words(page.chars)
-            for word in words:
-                word_str = "".join(char["text"] for char in word)
-
-                # if word_str == "Amt":
-                #     print("break")
-
-                chars = get_emphasized_part(word)
-                if not chars:
-                    continue
-
-                font_size = chars[0]["size"]
-                font_name = chars[0]["fontname"]
-                font_names.add(font_name)
-
-                # if font_name == 'CVDRPC+DGMetaSerifScience-Italic':
-                #     print("break")
-
-                if not fonts.setup_boldened_font(c, font_name, font_size, use_extrabold):
-                    continue
-                for char in chars:
-                    x = char["x0"]
-                    y = char["matrix"][5]
-                    character = char["text"]
-                    if c._char_offsets is None:
-                        dx, dy = 0, 0
-                    else:
-                        offset_char = CHAR_MAP.get(character, character)
-                        dx, dy = c._char_offsets.get(offset_char, (0, 0))
-                    c.drawString(x + dx, y + dy, character)
-
-            c.showPage()  # new page
-
-        c.save()
-
-    print("Document fonts:", font_names)
-    print("Missing fonts:", fonts._missing_fonts)
+    # Write overlay pdf file
+    overlay_pdf = generate_text_overlay(input_pdf_path)
 
     # Merge overlay with the original pages
     writer = PdfWriter()
     reader = PdfReader(input_pdf_path)
     with open(overlay_pdf, "rb") as overlay_file:
         overlay_reader = PdfReader(overlay_file)
-        for page_number, page in enumerate(reader.pages):
+        for page_number, page in enumerate(tqdm(reader.pages, "Merging overlay with original pages")):
             overlay_page = overlay_reader.pages[page_number]
             page.merge_page(overlay_page)
             writer.add_page(page)
 
     # Save the output PDF
+    print("Saving output document.")
     with open(output_pdf_path, "wb") as output_file:
         writer.write(output_file)
 
@@ -145,8 +168,8 @@ def add_text_overlay(input_pdf_path, output_pdf_path, use_extrabold=False):
 
 
 if __name__ == "__main__":
-    input_pdf_path = "sample10.pdf"
-    output_pdf_path = "output10.pdf"
+    input_pdf_path = "sample17.pdf"
+    output_pdf_path = "output17.pdf"
     add_text_overlay(input_pdf_path, output_pdf_path)
 
     print(f"Overlay added successfully. Saved as {output_pdf_path}")
