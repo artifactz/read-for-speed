@@ -3,7 +3,6 @@ from tqdm import tqdm
 import pdfplumber
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
 import fonts
 
 
@@ -88,10 +87,12 @@ def generate_text_overlay(input_pdf_path, use_extrabold=False):
 
     print("Reading document.")
     with pdfplumber.open(input_pdf_path) as input_pdf:
-        with tempfile.NamedTemporaryFile(delete=False, suffix="_overlay.pdf") as overlay_pdf:
+        page_sizes = sorted((page.width, page.height) for page in input_pdf.pages)
+        median_page_size = page_sizes[len(page_sizes) // 2]
 
-            # Create overlay document
-            c = canvas.Canvas(overlay_pdf, pagesize=letter)
+        # Create overlay document
+        with tempfile.NamedTemporaryFile(delete=False, suffix="_overlay.pdf") as overlay_pdf:
+            c = canvas.Canvas(overlay_pdf, pagesize=median_page_size)
 
             for page in tqdm(input_pdf.pages, "Generating overlay pages"):
                 words = group_words(page.chars)
