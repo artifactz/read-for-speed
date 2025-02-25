@@ -60,7 +60,9 @@ def group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>Â
             
             if (
                 is_newline != was_hyphen or  # Unhyphenated new line or hyphen but no new line
-                char["x0"] - prev_char["x1"] > offset_threshold or  # Gap between words
+                char["x0"] - prev_char["x1"] > offset_threshold or  # Space between words
+                (abs(char["x0"] - prev_char["x1"]) > offset_threshold and
+                 abs(char["matrix"][5] - prev_char["matrix"][5]) > offset_threshold) or  # New paragraph
                 char["text"] in non_word_chars  # Word-breaking char
             ):
                 words.append(word)
