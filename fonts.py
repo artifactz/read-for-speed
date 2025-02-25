@@ -58,8 +58,8 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extra
         return False
 
     if identifier not in _registered_fonts:
-        if identifier == "TimesNewerRoman-Bold":
-            print("break")
+        # if identifier == "TimesNewerRoman-Bold":
+        #     print("break")
         try:
             pdfmetrics.registerFont(TTFont(identifier, f"{FONT_DIR}/{identifier}.ttf"))
         except TTFError:
@@ -106,7 +106,10 @@ def _disambiguate_identifier(pdf_identifier: str) -> str:
     if m := re.match(r"^[A-Z]+\+(.+)$", family_name):
         family_name = m.group(1)
 
-    # Strip Monotype suffix if any
+    # Remove spaces
+    family_name = family_name.replace(" ", "")
+
+    # Strip Monotype suffix
     family_name = family_name.removesuffix("MT")
 
     # Split into family name and modifiers
@@ -114,7 +117,7 @@ def _disambiguate_identifier(pdf_identifier: str) -> str:
     splits = family_name.split(splitter, maxsplit=1)
     family_name = splits[0]
 
-    # Strip PostScript suffix if any
+    # Strip PostScript suffix
     family_name = family_name.removesuffix("PS")
 
     # Attempt replacement via FONT_MAP
