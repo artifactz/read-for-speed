@@ -2,7 +2,7 @@ import math, re, os, tempfile
 from tqdm import tqdm
 import pdfplumber
 from PyPDF2 import PdfReader, PdfWriter
-from reportlab.pdfgen import canvas
+from reportlab.pdfgen.canvas import Canvas
 import fonts
 
 
@@ -37,7 +37,7 @@ CHAR_MAP = {
 }
 
 
-def get_emphasized_part(word_chars):
+def _get_emphasized_part(word_chars):
     if len(word_chars) < 2:
         return []
 
@@ -51,7 +51,7 @@ def get_emphasized_part(word_chars):
     return word_chars[:math.ceil(len(word_chars) / 2)]
 
 
-def group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>§$%&_'"„“‚‘«»→—="""):
+def _group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>§$%&_'"„“‚‘«»→—="""):
     prev_char = None
     words = []
     word = []
@@ -80,7 +80,7 @@ def group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>�
     return words
 
 
-def disassemble_ligatures(chars, overlay_font_name):
+def _disassemble_ligatures(chars, overlay_font_name):
     """Disassembles ligatures into individual characters."""
     STRIDES = {
         'ComputerModernSerif-Bold': {'ffi': [0.0, 0.27, 0.57], 'fi': [0.0, 0.29], 'ff': [0.0, 0.29], 'fl': [0.0, 0.29]},
@@ -103,10 +103,73 @@ def disassemble_ligatures(chars, overlay_font_name):
     return new_chars
 
 
-def generate_text_overlay(input_pdf_path, use_extrabold=False):
-    """Generates an overlay pdf document and returns its path."""
+def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, use_extrabold=False):
+    """Draws the overlay for the page to the canvas."""
+    font_names = set()
+    total_words = 0
+    successful_words = 0
 
-    input_font_names = set()
+    # reportlab starts with its default font on every page
+    current_font = None
+    current_font_is_valid = False
+
+    words = _group_words(page.chars)
+    for word in words:
+        word_str = "".join(char["text"] for char in word)  # useful when debugging
+
+        # if word_str == "Research":
+        #     print("break")
+
+        chars = _get_emphasized_part(word)
+        if not chars:
+            continue
+
+        total_words += 1
+        font_size = chars[0]["size"]
+        font_name = chars[0]["fontname"]
+
+        if (font_name, font_size) != current_font:
+            current_font = (font_name, font_size)
+            font_names.add(font_name)
+            if not (overlay_font := fonts.setup_boldened_font(canvas, font_name, font_size, use_extrabold)):
+                current_font_is_valid = False
+                continue
+            current_font_is_valid = True
+
+        if not current_font_is_valid:
+            continue
+
+        chars = _disassemble_ligatures(chars, overlay_font[0])
+
+        for char in chars:
+            x = char["x0"]
+            y = char["matrix"][5]
+            character = char["text"]
+            if canvas._char_offsets is None:
+                dx, dy = 0, 0
+            else:
+                offset_char = CHAR_MAP.get(character, character)
+                dx, dy = canvas._char_offsets.get(offset_char, (0, 0))
+            canvas.drawString(x + dx, y + dy, character)
+
+        successful_words += 1
+
+    return {
+        "total_words": total_words,
+        "successful_words": successful_words,
+        "font_names": font_names
+    }
+
+
+def generate_text_overlay(input_pdf_path):
+    """
+    Generates an overlay pdf document and returns its path.
+    Returns metadata.
+    """
+
+    font_names = set()
+    total_words = 0
+    successful_words = 0
 
     print("Reading document.")
     with pdfplumber.open(input_pdf_path) as input_pdf:
@@ -115,72 +178,40 @@ def generate_text_overlay(input_pdf_path, use_extrabold=False):
 
         # Create overlay document
         with tempfile.NamedTemporaryFile(delete=False, suffix="_overlay.pdf") as overlay_pdf:
-            c = canvas.Canvas(overlay_pdf, pagesize=median_page_size)
+            canvas = Canvas(overlay_pdf, pagesize=median_page_size)
 
             for page in tqdm(input_pdf.pages, "Generating overlay pages"):
-                words = group_words(page.chars)
+                page_result = _draw_page_overlay(canvas, page)
+                canvas.showPage()  # new page
+                font_names |= page_result["font_names"]
+                total_words += page_result["total_words"]
+                successful_words += page_result["successful_words"]
+            canvas.save()
 
-                # reportlab starts with its default font on every page
-                current_font = None
-                current_font_is_valid = False
-
-                for word in words:
-                    word_str = "".join(char["text"] for char in word)  # useful when debugging
-
-                    # if word_str == "efficiency":
-                    #     print("break")
-
-                    chars = get_emphasized_part(word)
-                    if not chars:
-                        continue
-
-                    font_size = chars[0]["size"]
-                    font_name = chars[0]["fontname"]
-
-                    if (font_name, font_size) != current_font:
-                        current_font = (font_name, font_size)
-                        input_font_names.add(font_name)
-                        if not (overlay_font := fonts.setup_boldened_font(c, font_name, font_size, use_extrabold)):
-                            current_font_is_valid = False
-                            continue
-                        current_font_is_valid = True
-
-                    if not current_font_is_valid:
-                        continue
-
-                    chars = disassemble_ligatures(chars, overlay_font[0])
-
-                    for char in chars:
-                        x = char["x0"]
-                        y = char["matrix"][5]
-                        character = char["text"]
-                        if c._char_offsets is None:
-                            dx, dy = 0, 0
-                        else:
-                            offset_char = CHAR_MAP.get(character, character)
-                            dx, dy = c._char_offsets.get(offset_char, (0, 0))
-                        c.drawString(x + dx, y + dy, character)
-
-                c.showPage()  # new page
-
-            c.save()
-
-    print("Document fonts:", input_font_names)
+    print("Document fonts:", font_names)
     print("Missing fonts:", fonts._missing_fonts)
 
-    return overlay_pdf.name
+    return {
+        "path": overlay_pdf.name,
+        "total_words": total_words,
+        "success_ratio": successful_words / total_words if total_words > 0 else 0,
+        "font_names": font_names
+    }
 
 
 def add_text_overlay(input_pdf_path, output_pdf_path):
-    """Adds text overlay to the input PDF and saves as output PDF."""
+    """
+    Adds text overlay to the input PDF and saves as output PDF.
+    Returns metadata.
+    """
 
     # Write overlay pdf file
-    overlay_pdf = generate_text_overlay(input_pdf_path)
+    metadata = generate_text_overlay(input_pdf_path)
 
     # Merge overlay with the original pages
     writer = PdfWriter()
     reader = PdfReader(input_pdf_path)
-    with open(overlay_pdf, "rb") as overlay_file:
+    with open(metadata["path"], "rb") as overlay_file:
         overlay_reader = PdfReader(overlay_file)
         for page_number, page in enumerate(tqdm(reader.pages, "Merging overlay with original pages")):
             overlay_page = overlay_reader.pages[page_number]
@@ -193,12 +224,14 @@ def add_text_overlay(input_pdf_path, output_pdf_path):
         writer.write(output_file)
 
     # Clean up temporary overlay file
-    os.remove(overlay_pdf)
+    os.remove(metadata["path"])
+
+    return metadata
 
 
 if __name__ == "__main__":
-    input_pdf_path = "sample20.pdf"
-    output_pdf_path = "output20.pdf"
+    input_pdf_path = "sample25.pdf"
+    output_pdf_path = "output25.pdf"
     add_text_overlay(input_pdf_path, output_pdf_path)
 
     print(f"Overlay added successfully. Saved as {output_pdf_path}")
