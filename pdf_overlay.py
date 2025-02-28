@@ -80,6 +80,27 @@ def group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>Â
     return words
 
 
+def disassemble_ligatures(chars, overlay_font_name):
+    """Disassembles ligatures into individual characters."""
+    STRIDES = {
+        'ComputerModernSerif-Bold': {'ffi': [0.0, 0.27, 0.57], 'fi': [0.0, 0.29], 'ff': [0.0, 0.29], 'fl': [0.0, 0.29]}
+    }
+
+    new_chars = []
+    for char in chars:
+        if len(char["text"]) > 1 and (fs := STRIDES.get(overlay_font_name)) and (strides := fs.get(char["text"])):
+            # Disassemble
+            for s, c in zip(strides, char["text"]):
+                new_char = char.copy()
+                new_char["text"] = c
+                new_char["x0"] += s * char["size"]
+                new_chars.append(new_char)
+        else:
+            new_chars.append(char)
+
+    return new_chars
+
+
 def generate_text_overlay(input_pdf_path, use_extrabold=False):
     """Generates an overlay pdf document and returns its path."""
 
@@ -104,6 +125,9 @@ def generate_text_overlay(input_pdf_path, use_extrabold=False):
                 for word in words:
                     word_str = "".join(char["text"] for char in word)  # useful when debugging
 
+                    # if word_str == "efficiency":
+                    #     print("break")
+
                     chars = get_emphasized_part(word)
                     if not chars:
                         continue
@@ -114,13 +138,15 @@ def generate_text_overlay(input_pdf_path, use_extrabold=False):
                     if (font_name, font_size) != current_font:
                         current_font = (font_name, font_size)
                         input_font_names.add(font_name)
-                        if not fonts.setup_boldened_font(c, font_name, font_size, use_extrabold):
+                        if not (overlay_font := fonts.setup_boldened_font(c, font_name, font_size, use_extrabold)):
                             current_font_is_valid = False
                             continue
                         current_font_is_valid = True
 
                     if not current_font_is_valid:
                         continue
+
+                    chars = disassemble_ligatures(chars, overlay_font[0])
 
                     for char in chars:
                         x = char["x0"]
@@ -169,8 +195,8 @@ def add_text_overlay(input_pdf_path, output_pdf_path):
 
 
 if __name__ == "__main__":
-    input_pdf_path = "sample17.pdf"
-    output_pdf_path = "output17.pdf"
+    input_pdf_path = "sample19.pdf"
+    output_pdf_path = "output19.pdf"
     add_text_overlay(input_pdf_path, output_pdf_path)
 
     print(f"Overlay added successfully. Saved as {output_pdf_path}")

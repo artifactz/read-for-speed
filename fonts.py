@@ -48,16 +48,19 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extra
         else:
             canvas._char_offsets = None
     else:
-        identifier = _bolden(identifier)  # TODO catch FontIsExtraboldException
         canvas._char_offsets = None
+        try:
+            identifier = _bolden(identifier)
+        except FontIsExtraboldException:
+            return None
 
     if not use_extrabold and "Extrabold" in identifier:
-        return False
+        return None
 
     identifier = _handle_helvetica(identifier)
 
     if identifier in _missing_fonts:
-        return False
+        return None
 
     if identifier not in _registered_fonts:
         # if identifier == "TimesNewerRoman-Bold":
@@ -67,11 +70,11 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extra
         except TTFError:
             print(f"Missing font: {identifier}")
             _missing_fonts.append(identifier)
-            return False
+            return None
         _registered_fonts.append(identifier)
 
     canvas.setFont(identifier, size)
-    return True
+    return (identifier, size)
 
 
 def _get_remapping(identifier: str) -> dict:
