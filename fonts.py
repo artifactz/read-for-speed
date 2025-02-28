@@ -150,7 +150,7 @@ def _disambiguate_modifiers(pdf_modifiers: str):
         weight = "Extrabold"
     elif "bold" in pdf_modifiers:
         weight = "Bold"
-    if "italic" in pdf_modifiers or "oblique" in pdf_modifiers:
+    if "ital" in pdf_modifiers or "oblique" in pdf_modifiers or "slant" in pdf_modifiers:
         italic = "Italic"
     return weight + italic
 
