@@ -132,6 +132,9 @@ def _disambiguate_identifier(pdf_identifier: str) -> str:
             break
 
     if len(splits) == 1:
+        family_name, modifiers = _disambiguate_capital_modifiers(family_name)
+        if modifiers:
+            return f"{family_name}-{modifiers}"
         return family_name
 
     if modifiers := _disambiguate_modifiers(splits[1]):
@@ -156,6 +159,24 @@ def _disambiguate_modifiers(pdf_modifiers: str):
     if "ital" in pdf_modifiers or "oblique" in pdf_modifiers or "slant" in pdf_modifiers:
         italic = "Italic"
     return weight + italic
+
+
+def _disambiguate_capital_modifiers(font_name: str):
+    """
+    Sometimes font modifiers are a suffix of uppercase characters.
+    Returns the stripped font name and its modifiers.
+    """
+    weight = ""
+    italic = ""
+    if font_name.endswith("TI"):
+        font_name = font_name.removesuffix("TI")
+        italic = "Italic"
+    if font_name.endswith("TB"):
+        font_name = font_name.removesuffix("TB")
+        weight = "Bold"
+    if font_name.endswith("T"):  # regular
+        font_name = font_name.removesuffix("T")
+    return font_name, weight + italic
 
 
 def _bolden(identifier: str):
