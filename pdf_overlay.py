@@ -83,7 +83,8 @@ def group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>Â
 def disassemble_ligatures(chars, overlay_font_name):
     """Disassembles ligatures into individual characters."""
     STRIDES = {
-        'ComputerModernSerif-Bold': {'ffi': [0.0, 0.27, 0.57], 'fi': [0.0, 0.29], 'ff': [0.0, 0.29], 'fl': [0.0, 0.29]}
+        'ComputerModernSerif-Bold': {'ffi': [0.0, 0.27, 0.57], 'fi': [0.0, 0.29], 'ff': [0.0, 0.29], 'fl': [0.0, 0.29]},
+        'LinLibertine-Bold': {'ffi': [0.0, 0.27, 0.56], 'fi': [0.0, 0.29], 'ff': [0.0, 0.29], 'fl': [0.0, 0.27]},
     }
 
     new_chars = []
@@ -195,8 +196,8 @@ def add_text_overlay(input_pdf_path, output_pdf_path):
 
 
 if __name__ == "__main__":
-    input_pdf_path = "sample19.pdf"
-    output_pdf_path = "output19.pdf"
+    input_pdf_path = "sample20.pdf"
+    output_pdf_path = "output20.pdf"
     add_text_overlay(input_pdf_path, output_pdf_path)
 
     print(f"Overlay added successfully. Saved as {output_pdf_path}")
