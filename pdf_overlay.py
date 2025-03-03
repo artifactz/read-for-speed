@@ -1,4 +1,5 @@
 import math, re, os, tempfile
+from typing import IO
 from tqdm import tqdm
 import pdfplumber
 from PyPDF2 import PdfReader, PdfWriter
@@ -194,14 +195,15 @@ def generate_text_overlay(input_pdf_path):
     return {
         "path": overlay_pdf.name,
         "total_words": total_words,
+        "successful_words": successful_words,
         "success_ratio": successful_words / total_words if total_words > 0 else 0,
-        "font_names": font_names
+        "font_names": list(font_names)
     }
 
 
-def add_text_overlay(input_pdf_path, output_pdf_path):
+def add_text_overlay_file(input_pdf_path: str, output_pdf_file: IO):
     """
-    Adds text overlay to the input PDF and saves as output PDF.
+    Adds text overlay to the input PDF and writes the output PDF to a file object.
     Returns metadata.
     """
 
@@ -220,13 +222,21 @@ def add_text_overlay(input_pdf_path, output_pdf_path):
 
     # Save the output PDF
     print("Saving output document.")
-    with open(output_pdf_path, "wb") as output_file:
-        writer.write(output_file)
+    writer.write(output_pdf_file)
 
     # Clean up temporary overlay file
     os.remove(metadata["path"])
 
     return metadata
+
+
+def add_text_overlay(input_pdf_path: str, output_pdf_path: str):
+    """
+    Adds text overlay to the input PDF and saves as output PDF file.
+    Returns metadata.
+    """
+    with open(output_pdf_path, "wb") as output_file:
+        return add_text_overlay_file(input_pdf_path, output_file)
 
 
 if __name__ == "__main__":
