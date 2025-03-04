@@ -192,12 +192,17 @@ def generate_text_overlay(input_pdf_path):
     print("Document fonts:", font_names)
     print("Missing fonts:", fonts._missing_fonts)
 
+    success_ratio = successful_words / total_words if total_words > 0 else 0
+    has_encrypted_fonts = any("AdvOT" in f for f in fonts._missing_fonts)
+    summary = "warning" if success_ratio < 0.5 or has_encrypted_fonts else "ok"
+
     return {
         "path": overlay_pdf.name,
+        "summary": summary,
         "total_words": total_words,
         "successful_words": successful_words,
-        "success_ratio": successful_words / total_words if total_words > 0 else 0,
-        "font_names": list(font_names)
+        "success_ratio": success_ratio,
+        "has_encrypted_fonts": has_encrypted_fonts,
     }
 
 
@@ -226,6 +231,7 @@ def add_text_overlay_file(input_pdf_path: str, output_pdf_file: IO):
 
     # Clean up temporary overlay file
     os.remove(metadata["path"])
+    del metadata["path"]
 
     return metadata
 
@@ -242,6 +248,6 @@ def add_text_overlay(input_pdf_path: str, output_pdf_path: str):
 if __name__ == "__main__":
     input_pdf_path = "sample25.pdf"
     output_pdf_path = "output25.pdf"
-    add_text_overlay(input_pdf_path, output_pdf_path)
-
+    metdata = add_text_overlay(input_pdf_path, output_pdf_path)
+    print("Metadata:", metdata)
     print(f"Overlay added successfully. Saved as {output_pdf_path}")
