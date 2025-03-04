@@ -114,6 +114,9 @@ def _disambiguate_identifier(pdf_identifier: str) -> str:
     # Remove spaces
     family_name = family_name.replace(" ", "")
 
+    # Remove trailing digits
+    family_name = re.sub(r"(\d+)$", "", family_name)
+
     # Strip Monotype suffix
     family_name = family_name.removesuffix("MT")
 
@@ -145,7 +148,7 @@ def _disambiguate_identifier(pdf_identifier: str) -> str:
 
 
 def _disambiguate_modifiers(pdf_modifiers: str):
-    pdf_modifiers = pdf_modifiers.lower()
+    pdf_modifiers = pdf_modifiers.lower()  # TODO given the increasing number of formats, verify if really needed
     weight = ""
     italic = ""
     if "light" in pdf_modifiers:
