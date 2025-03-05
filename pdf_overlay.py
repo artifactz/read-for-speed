@@ -52,7 +52,7 @@ def _get_emphasized_part(word_chars):
     return word_chars[:math.ceil(len(word_chars) / 2)]
 
 
-def _group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>§$%&_'"„“‚‘«»→—="""):
+def group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>§$%&_'"„“‚‘«»→—="""):
     prev_char = None
     words = []
     word = []
@@ -114,7 +114,7 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, use_extrabold=
     current_font = None
     current_font_is_valid = False
 
-    words = _group_words(page.chars)
+    words = group_words(page.chars)
     for word in words:
         word_str = "".join(char["text"] for char in word)  # useful when debugging
 
