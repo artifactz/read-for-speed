@@ -151,7 +151,7 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, use_extrabold=
             else:
                 offset_char = CHAR_MAP.get(character, character)
                 dx, dy = canvas._char_offsets.get(offset_char, (0, 0))
-            canvas.drawString(x + dx, y + dy, character)
+            canvas.drawString(x + dx, y - dy, character)  # reportlab y axis is down-top
 
         successful_words += 1
 
