@@ -114,16 +114,16 @@ def _disambiguate_identifier(pdf_identifier: str) -> str:
     # Remove spaces
     family_name = family_name.replace(" ", "")
 
-    # Remove trailing digits
+    # Remove trailing digits (e.g. "Corbel3", not yet encountered though: "Corbel3-Bold")
     family_name = re.sub(r"(\d+)$", "", family_name)
-
-    # Strip Monotype suffix
-    family_name = family_name.removesuffix("MT")
 
     # Split into family name and modifiers
     splitter = "-" if "-" in family_name else ","
     splits = family_name.split(splitter, maxsplit=1)
     family_name = splits[0]
+
+    # Strip Monotype suffix
+    family_name = family_name.removesuffix("MT")
 
     # Strip PostScript suffix
     family_name = family_name.removesuffix("PS")
@@ -155,7 +155,7 @@ def _disambiguate_modifiers(pdf_modifiers: str):
         weight = "Light"
     elif "semibold" in pdf_modifiers:
         weight = "Semibold"
-    elif "extrabold" in pdf_modifiers:
+    elif "extrabold" in pdf_modifiers or "black" in pdf_modifiers:
         weight = "Extrabold"
     elif "bold" in pdf_modifiers:
         weight = "Bold"

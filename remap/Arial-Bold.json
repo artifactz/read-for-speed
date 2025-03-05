@@ -1,7 +1,7 @@
 {
   "base_font": "Arial-Bold",
-  "overlay_font": "UnBPro-Black",
-  "overlay_font_path": "fonts/UnBPro-Black.ttf",
+  "overlay_font": "UnBPro-Extrabold",
+  "overlay_font_path": "fonts/UnBPro-Extrabold.ttf",
   "font_scale": 1.0099826388888888,
   "total_overlap": 1585.9393617839291,
   "offsets": {
