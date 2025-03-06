@@ -68,11 +68,15 @@ def optimize_offset(char, overlay_font, ref_font):
     The remainder is the number of pixels of the underlaying character not covered by the overlaying character.
     Returns offset and ratio of remainder pixels.
     """
-    ref_img = char_to_image_array(char, ref_font) / 255.0
-    overlay_img = char_to_image_array(char, overlay_font, (ref_img.shape[1], ref_img.shape[0])) / 255.0
+    # Start with both characters centered horizontally
+    ref_img, x1 = char_to_image_array(char, ref_font)
+    overlay_img, x2 = char_to_image_array(char, overlay_font, (ref_img.shape[1], ref_img.shape[0]))
+    ref_img /= 255.0
+    overlay_img /= 255.0
     offset = (0, 0)
     remainders = {offset: np.sum(overlay_img * (1.0 - ref_img))}
     neighbors = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
+
     while True:
         neighbor_remainders = []
         for dx, dy in neighbors:
@@ -86,7 +90,9 @@ def optimize_offset(char, overlay_font, ref_font):
         if neighbor_remainders[i] >= remainders[offset]:
             break
         offset = tuple(np.asarray(offset) + neighbors[i])
-    score = remainders[offset] / (ref_img.shape[0] * ref_img.shape[1])
+
+    score = remainders[offset] / (ref_img.shape[0] * ref_img.shape[1])  # total pixels to ratio
+    offset = (offset[0] - x1 + x2, offset[1])  # add initial offset from horizontal centering
     offset = tuple(np.asarray(offset) / overlay_font.size)
     return offset, score
 
@@ -103,21 +109,26 @@ def move_image(img, dx, dy, pad_color=255):
     return img
 
 
-def char_to_image_array(char, font, image_size=None):
+def char_to_image_array(char, font, image_size=None, x=None):
     # Create a blank image with white background
     if image_size is None:
         image_size = (int(1.333 * font.size), int(1.333 * font.size))
     image = Image.new("L", image_size, 255)
     draw = ImageDraw.Draw(image)
 
+    # Determine x position
+    if x is None:
+        bb = draw.textbbox((0, 0), char, font=font)
+        w = bb[2] - bb[0] + 1
+        x = int((image_size[0] - w) / 2)
+
     # Render the text
-    # bb = draw.textbbox((0, 0), char, font=font)
-    draw.text((0.125 * image_size[0], 0.75 * image_size[0]), char, font=font, anchor="ls", fill=0)
+    draw.text((x, 0.75 * image_size[0]), char, font=font, anchor="ls", fill=0)
 
     # Convert image to NumPy array
     image_array = np.array(image, float)
 
-    return image_array
+    return image_array, x
 
 
 def write_json(align_font_result):
@@ -161,8 +172,10 @@ def write_report(align_font_result, charset=DEFAULT_CHARS, font_size=128):
 
 def draw_char_overlay(char: str, overlay_font, base_font, offset):
     offset = (int(offset[0] * overlay_font.size), int(offset[1] * overlay_font.size))
-    r = 255.0 - char_to_image_array(char, base_font)
-    g = 255.0 - move_image(char_to_image_array(char, overlay_font, (r.shape[1], r.shape[0])), *offset)
+    img1, x = char_to_image_array(char, base_font)
+    img2, _ = char_to_image_array(char, overlay_font, (img1.shape[1], img1.shape[0]), x)
+    r = 255.0 - img1
+    g = 255.0 - move_image(img2, *offset)
     b = np.zeros_like(r)
     overlap = np.minimum(g, r) > 0
     b[overlap] = 0.5 * (r[overlap] + g[overlap])
@@ -171,9 +184,25 @@ def draw_char_overlay(char: str, overlay_font, base_font, offset):
 
 
 if __name__ == "__main__":
-    run("fonts/CrimsonText-Bold.ttf", "trash/fonts/TimesNewRoman.ttf")
-    run("fonts/Junicode-Bold.ttf", "trash/fonts/TimesNewRoman.ttf")
-    run("fonts/LibreCaslonText-Bold.ttf", "trash/fonts/TimesNewRoman.ttf")
-    run("fonts/Mignon-Bold.ttf", "trash/fonts/TimesNewRoman.ttf")
-    run("fonts/STIXTwoText-Bold.ttf", "trash/fonts/TimesNewRoman.ttf")
+    run("fonts/Junicode-BoldItalic.ttf", "trash/fonts/AGaramond-Italic.otf")
+    run("fonts/EBGaramond-Bold.ttf", "trash/fonts/AGaramond.otf")
+    run("fonts/IBMPlexSans-Bold.ttf", "trash/fonts/Aptos.ttf")
+    run("fonts/UnBPro-Extrabold.ttf", "trash/fonts/Arial-Bold.ttf")
+    run("fonts/LiberationSans-BoldItalic.ttf", "trash/fonts/Arial-Italic.ttf")
+    run("fonts/LiberationSans-Bold.ttf", "trash/fonts/Arial.ttf")
+    run("fonts/ComputerModernSerif-BoldItalic.ttf", "fonts/ComputerModernSerif-Italic.ttf")
+    run("fonts/ComputerModernSerif-Bold.ttf", "fonts/ComputerModernSerif.ttf")
+    run("fonts/Vegur-Bold.ttf", "trash/fonts/Corbel.ttf")
+    run("fonts/LinBiolinum-BoldItalic.ttf", "trash/fonts/LinBiolinum-Italic.ttf")
+    run("fonts/Mignon-BoldItalic.ttf", "trash/fonts/MinionPro-Italic.ttf")
+    run("fonts/Mignon-Bold.ttf", "trash/fonts/MinionPro.ttf")
+    run("fonts/STIXTwoText-Bold.ttf", "trash/fonts/STIXTwoText.ttf")
+    run("fonts/CrimsonText-BoldItalic.ttf", "trash/fonts/Sabon-Italic.ttf")
+    run("fonts/CrimsonText-Bold.ttf", "trash/fonts/Sabon.ttf")
+    run("fonts/Playfair_SemiCondensed-Bold.ttf", "trash/fonts/SuisseWorks.otf")
+    run("fonts/TimesNewerRoman-BoldItalic.ttf", "trash/fonts/TimesNewRoman-Italic.ttf")
     run("fonts/TimesNewerRoman-Bold.ttf", "trash/fonts/TimesNewRoman.ttf")
+    run("fonts/OpenSans_SemiCondensed-SemiBold.ttf", "trash/fonts/VectoraLH-Light.ttf")
+    run("fonts/OpenSans_SemiCondensed-Bold.ttf", "trash/fonts/VectoraLH.ttf")
+    run("fonts/DejaVuSans-BoldItalic.ttf", "trash/fonts/Verdana-Italic.ttf")
+    run("fonts/DejaVuSans-Bold.ttf", "trash/fonts/Verdana.ttf")
