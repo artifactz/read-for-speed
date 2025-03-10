@@ -12,10 +12,10 @@ FONT_DIR = f'{os.path.dirname(__file__)}/fonts'
 
 # font name synonyms, i.e. mapping to font file name
 FONT_MAP = {
-    "CMSS(\d|\d\d)": "ComputerModernSans",
-    "CMR(\d|\d\d)": "ComputerModernSerif",
-    "CMTI(\d|\d\d)": "ComputerModernSerif-Italic",
-    "CMBX(\d|\d\d)": "ComputerModernSerif-Bold",
+    "CMSS": "ComputerModernSans",
+    "CMR": "ComputerModernSerif",
+    "CMTI": "ComputerModernSerif-Italic",
+    "CMBX": "ComputerModernSerif-Bold",
     "DGMetaSerifScience": "DeGruyterSerif",
     "DGMetaScience": "DeGruyterSans",
     "STIXGeneral": "STIXTwoText",
@@ -34,10 +34,6 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extra
     """
     Sets up a boldened version of a font for overlay.
     """
-
-    # if pdf_font_identifier == "KPCEMI+VectoraLH-Roman":
-    #     print("break")
-
     identifier = _disambiguate_identifier(pdf_font_identifier)
     if remapping := _get_remapping(identifier):
         identifier = remapping["overlay_font"]
@@ -63,8 +59,6 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extra
         return None
 
     if identifier not in _registered_fonts:
-        # if identifier == "TimesNewerRoman-Bold":
-        #     print("break")
         try:
             pdfmetrics.registerFont(TTFont(identifier, f"{FONT_DIR}/{identifier}.ttf"))
         except TTFError:
