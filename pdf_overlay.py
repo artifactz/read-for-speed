@@ -48,8 +48,17 @@ def _get_emphasized_part(word_chars):
     if re.match(r"^\d+(?:\w|\w\w)?$", word) or word == word.upper():
         return []
 
-    # TODO: don't count standalone umlaut chars into length, but still emphasize them
-    return word_chars[:math.ceil(len(word_chars) / 2)]
+    # Don't include standalone umlaut chars in length
+    num_umlauts = sum(1 for char in word_chars if char["text"] == "¨")
+    end = math.ceil((len(word_chars) - num_umlauts) / 2)
+    # Extend end by one for every standalone umlaut in emphasized part
+    for _ in (char for char in word_chars[:end] if char["text"] == "¨"):
+        while True:
+            end += 1
+            if word_chars[end - 1]["text"] != "¨":
+                break
+
+    return word_chars[:end]
 
 
 def group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>§$%&_'"„“‚‘«»→—="""):
