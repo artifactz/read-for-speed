@@ -7,21 +7,28 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import cv2
+from tqdm import tqdm
 
 
 DEFAULT_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 OUTPUT_FOLDER = "out"
+REMAP_FOLDER = "remap"
 
 
-def run(overlay_font_path, base_font_path):
+def run(overlay_font_path, base_font_path, install_remap=False, verbose=True):
     Path(OUTPUT_FOLDER).mkdir(exist_ok=True)
 
-    print("Optimizing", Path(overlay_font_path).stem, "on", Path(base_font_path).stem, "...", flush=True)
+    if verbose:
+        print("Optimizing", Path(overlay_font_path).stem, "on", Path(base_font_path).stem, "...", flush=True)
     result = align_font(overlay_font_path, base_font_path)
-    print("Writing json...", flush=True)
+    if verbose:
+        print("Writing json...", flush=True)
     write_json(result)
+    if install_remap:
+        write_json(result, f"{REMAP_FOLDER}/{Path(base_font_path).stem}.json")
 
-    print("Writing report...", flush=True)
+    if verbose:
+        print("Writing report...", flush=True)
     write_report(result)
 
 
@@ -131,9 +138,13 @@ def char_to_image_array(char, font, image_size=None, x=None):
     return image_array, x
 
 
-def write_json(align_font_result):
-    filename = f"{align_font_result['overlay_font']}_on_{align_font_result['base_font']}.json"
-    with open(f"{OUTPUT_FOLDER}/{filename}", "w") as f:
+def write_json(align_font_result, path=None):
+    if not path:
+        path = f"{OUTPUT_FOLDER}/{align_font_result['overlay_font']}_on_{align_font_result['base_font']}.json"
+    align_font_result = dict(align_font_result)
+    del align_font_result["base_font_path"]
+    del align_font_result["overlay_font_path"]
+    with open(path, "w") as f:
         json.dump(align_font_result, f, indent=2)
 
 
@@ -183,26 +194,50 @@ def draw_char_overlay(char: str, overlay_font, base_font, offset):
     return img
 
 
+def run_wrapper(arg):
+    run(*arg, install_remap=True, verbose=False)
+
+
+def regenerate_remappings():
+    """
+    Re-runs alignment for the current selection of open fonts as substitutes to their corresponding proprietary font.
+    Copies the result to the remap/ folder to be used by pdf_overlay.
+    """
+    import multiprocessing
+
+    font_map = {
+        "fonts/Junicode-BoldItalic.ttf": "proprietary/fonts/AGaramond-Italic.otf",
+        "fonts/EBGaramond-Bold.ttf": "proprietary/fonts/AGaramond.otf",
+        "fonts/IBMPlexSans-Bold.ttf": "proprietary/fonts/Aptos.ttf",
+        "fonts/UnBPro-Extrabold.ttf": "proprietary/fonts/Arial-Bold.ttf",
+        "fonts/LiberationSans-BoldItalic.ttf": "proprietary/fonts/Arial-Italic.ttf",
+        "fonts/LiberationSans-Bold.ttf": "proprietary/fonts/Arial.ttf",
+        "fonts/ComputerModernSerif-BoldItalic.ttf": "fonts/ComputerModernSerif-Italic.ttf",
+        "fonts/ComputerModernSerif-Bold.ttf": "fonts/ComputerModernSerif.ttf",
+        "fonts/Vegur-Bold.ttf": "proprietary/fonts/Corbel.ttf",
+        "fonts/LinBiolinum-BoldItalic.ttf": "proprietary/fonts/LinBiolinum-Italic.ttf",
+        "fonts/Mignon-BoldItalic.ttf": "proprietary/fonts/MinionPro-Italic.ttf",
+        "fonts/Mignon-Bold.ttf": "proprietary/fonts/MinionPro.ttf",
+        "fonts/STIXTwoText-Bold.ttf": "proprietary/fonts/STIXTwoText.ttf",
+        "fonts/CrimsonText-BoldItalic.ttf": "proprietary/fonts/Sabon-Italic.ttf",
+        "fonts/CrimsonText-Bold.ttf": "proprietary/fonts/Sabon.ttf",
+        "fonts/Playfair_SemiCondensed-Bold.ttf": "proprietary/fonts/SuisseWorks.otf",
+        "fonts/TimesNewerRoman-BoldItalic.ttf": "proprietary/fonts/TimesNewRoman-Italic.ttf",
+        "fonts/TimesNewerRoman-Bold.ttf": "proprietary/fonts/TimesNewRoman.ttf",
+        "fonts/OpenSans_SemiCondensed-SemiBold.ttf": "proprietary/fonts/VectoraLH-Light.ttf",
+        "fonts/OpenSans_SemiCondensed-Bold.ttf": "proprietary/fonts/VectoraLH.ttf",
+        "fonts/DejaVuSans-BoldItalic.ttf": "proprietary/fonts/Verdana-Italic.ttf",
+        "fonts/DejaVuSans-Bold.ttf": "proprietary/fonts/Verdana.ttf",
+    }
+
+    pool = multiprocessing.Pool()
+    list(tqdm(
+        pool.imap_unordered(run_wrapper, font_map.items()),
+        total=len(font_map)
+    ))
+
+
 if __name__ == "__main__":
-    run("fonts/Junicode-BoldItalic.ttf", "trash/fonts/AGaramond-Italic.otf")
-    run("fonts/EBGaramond-Bold.ttf", "trash/fonts/AGaramond.otf")
-    run("fonts/IBMPlexSans-Bold.ttf", "trash/fonts/Aptos.ttf")
-    run("fonts/UnBPro-Extrabold.ttf", "trash/fonts/Arial-Bold.ttf")
-    run("fonts/LiberationSans-BoldItalic.ttf", "trash/fonts/Arial-Italic.ttf")
-    run("fonts/LiberationSans-Bold.ttf", "trash/fonts/Arial.ttf")
-    run("fonts/ComputerModernSerif-BoldItalic.ttf", "fonts/ComputerModernSerif-Italic.ttf")
-    run("fonts/ComputerModernSerif-Bold.ttf", "fonts/ComputerModernSerif.ttf")
-    run("fonts/Vegur-Bold.ttf", "trash/fonts/Corbel.ttf")
-    run("fonts/LinBiolinum-BoldItalic.ttf", "trash/fonts/LinBiolinum-Italic.ttf")
-    run("fonts/Mignon-BoldItalic.ttf", "trash/fonts/MinionPro-Italic.ttf")
-    run("fonts/Mignon-Bold.ttf", "trash/fonts/MinionPro.ttf")
-    run("fonts/STIXTwoText-Bold.ttf", "trash/fonts/STIXTwoText.ttf")
-    run("fonts/CrimsonText-BoldItalic.ttf", "trash/fonts/Sabon-Italic.ttf")
-    run("fonts/CrimsonText-Bold.ttf", "trash/fonts/Sabon.ttf")
-    run("fonts/Playfair_SemiCondensed-Bold.ttf", "trash/fonts/SuisseWorks.otf")
-    run("fonts/TimesNewerRoman-BoldItalic.ttf", "trash/fonts/TimesNewRoman-Italic.ttf")
-    run("fonts/TimesNewerRoman-Bold.ttf", "trash/fonts/TimesNewRoman.ttf")
-    run("fonts/OpenSans_SemiCondensed-SemiBold.ttf", "trash/fonts/VectoraLH-Light.ttf")
-    run("fonts/OpenSans_SemiCondensed-Bold.ttf", "trash/fonts/VectoraLH.ttf")
-    run("fonts/DejaVuSans-BoldItalic.ttf", "trash/fonts/Verdana-Italic.ttf")
-    run("fonts/DejaVuSans-Bold.ttf", "trash/fonts/Verdana.ttf")
+    regenerate_remappings()
+
+    # run("fonts/Junicode-BoldItalic.ttf", "trash/fonts/AGaramond-Italic.otf")
