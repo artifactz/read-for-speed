@@ -62,10 +62,16 @@ def align_font_instance(overlay_font: ImageFont.FreeTypeFont, base_font: ImageFo
     """
     Takes two font objects and returns a dictionary with optimal offsets, individual scores, and a total score.
     """
-    optimization_result = {"average_remainder": None, "offsets": {}}
+    optimization_result = {"characters": {}, "average_remainder": None}
     for char in charset:
-        optimization_result["offsets"][char] = optimize_offset(char, overlay_font, base_font)
-    optimization_result["average_remainder"] = np.mean([v[1] for v in optimization_result["offsets"].values()])
+        optimization_result["characters"][char] = optimize_offset(char, overlay_font, base_font)
+    optimization_result["average_remainder"] = np.mean(
+        [value["remainder"] for value in optimization_result["characters"].values()]
+    )
+    optimization_result["median_y_offset"] = sorted(
+        [value["offset"][1] for value in optimization_result["characters"].values()]
+    )[len(optimization_result["characters"]) // 2]
+
     return optimization_result
 
 
@@ -76,12 +82,12 @@ def optimize_offset(char, overlay_font, ref_font):
     Returns offset and ratio of remainder pixels.
     """
     # Start with both characters centered horizontally
-    ref_img, x1 = char_to_image_array(char, ref_font)
-    overlay_img, x2 = char_to_image_array(char, overlay_font, (ref_img.shape[1], ref_img.shape[0]))
-    ref_img /= 255.0
-    overlay_img /= 255.0
+    ref_img = create_char_image(char, ref_font)
+    overlay_img = create_char_image(char, overlay_font, (ref_img["image"].shape[1], ref_img["image"].shape[0]))
+    ref_img["image"] /= 255.0
+    overlay_img["image"] /= 255.0
     offset = (0, 0)
-    remainders = {offset: np.sum(overlay_img * (1.0 - ref_img))}
+    remainders = {offset: np.sum(overlay_img["image"] * (1.0 - ref_img["image"]))}
     neighbors = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
 
     while True:
@@ -89,8 +95,8 @@ def optimize_offset(char, overlay_font, ref_font):
         for dx, dy in neighbors:
             new_offset = (offset[0] + dx, offset[1] + dy)
             if new_offset not in remainders:
-                img = move_image(overlay_img, *new_offset)
-                remainder = np.sum(img * (1.0 - ref_img))
+                img = move_image(overlay_img["image"], *new_offset)
+                remainder = np.sum(img * (1.0 - ref_img["image"]))
                 remainders[new_offset] = remainder
             neighbor_remainders.append(remainders[new_offset])
         i = np.argmin(neighbor_remainders)
@@ -98,10 +104,18 @@ def optimize_offset(char, overlay_font, ref_font):
             break
         offset = tuple(np.asarray(offset) + neighbors[i])
 
-    score = remainders[offset] / (ref_img.shape[0] * ref_img.shape[1])  # total pixels to ratio
-    offset = (offset[0] - x1 + x2, offset[1])  # add initial offset from horizontal centering
+    remainder = remainders[offset] / (ref_img["image"].shape[0] * ref_img["image"].shape[1])  # absolute number of pixels to ratio
+    initial_x_offset = overlay_img["bbox"][0] - ref_img["bbox"][0]  # from horizontal centering
+    offset = (offset[0] + initial_x_offset, offset[1])
     offset = tuple(np.asarray(offset) / overlay_font.size)
-    return offset, score
+    size = ((overlay_img["bbox"][2] - overlay_img["bbox"][0]) / overlay_font.size,
+            (overlay_img["bbox"][3] - overlay_img["bbox"][1]) / overlay_font.size)
+
+    return {
+        "size": size,
+        "offset": offset,
+        "remainder": remainder,
+    }
 
 
 def move_image(img, dx, dy, pad_color=255):
@@ -116,26 +130,33 @@ def move_image(img, dx, dy, pad_color=255):
     return img
 
 
-def char_to_image_array(char, font, image_size=None, x=None):
-    # Create a blank image with white background
+def create_char_image(char, font, image_size=None, x=None):
+    """
+    Creates an image of the character with the given font and size.
+    """
     if image_size is None:
         image_size = (int(1.333 * font.size), int(1.333 * font.size))
+    # Create a blank image with white background
     image = Image.new("L", image_size, 255)
     draw = ImageDraw.Draw(image)
+    bb = draw.textbbox((0, 0), char, font=font, anchor="ls")
 
-    # Determine x position
+    # Determine position
+    y = 0.75 * image_size[0]
     if x is None:
-        bb = draw.textbbox((0, 0), char, font=font)
         w = bb[2] - bb[0] + 1
         x = int((image_size[0] - w) / 2)
 
     # Render the text
-    draw.text((x, 0.75 * image_size[0]), char, font=font, anchor="ls", fill=0)
+    draw.text((x, y), char, font=font, anchor="ls", fill=0)
 
     # Convert image to NumPy array
     image_array = np.array(image, float)
 
-    return image_array, x
+    return {
+        "image": image_array,
+        "bbox": (bb[0] + x, bb[1] + y, bb[2] + x, bb[3] + y)
+    }
 
 
 def write_json(align_font_result, path=None):
@@ -171,7 +192,8 @@ def write_report(align_font_result, charset=DEFAULT_CHARS, font_size=128):
         f.write("<tr><th>Char</th><th>Offset</th><th>Remainder</th><th>Image</th></tr>")
 
         for char in charset:
-            offset, remainder = align_font_result['offsets'][char]
+            c = align_font_result['characters'][char]
+            offset, remainder = c["offset"], c["remainder"]
             f.write(f"<tr><td>{char}</td><td>({offset[0]:.3f}, {offset[1]:.3f})</td><td>{remainder * 100:.5f}%</td>")
             img = draw_char_overlay(char, overlay_font, base_font, offset)
             img_base64 = base64.b64encode(cv2.imencode(".png", img)[1]).decode("utf-8")
@@ -182,11 +204,16 @@ def write_report(align_font_result, charset=DEFAULT_CHARS, font_size=128):
 
 
 def draw_char_overlay(char: str, overlay_font, base_font, offset):
+    """
+    Draws both the base and overlay version of the character and highlights remainder pixels.
+    """
     offset = (int(offset[0] * overlay_font.size), int(offset[1] * overlay_font.size))
-    img1, x = char_to_image_array(char, base_font)
-    img2, _ = char_to_image_array(char, overlay_font, (img1.shape[1], img1.shape[0]), x)
-    r = 255.0 - img1
-    g = 255.0 - move_image(img2, *offset)
+    # img1, x = create_char_image(char, base_font)
+    char1_image = create_char_image(char, base_font)
+    w, h, x = char1_image["image"].shape[1], char1_image["image"].shape[0], char1_image["bbox"][0]
+    char2_image = create_char_image(char, overlay_font, (w, h), x)
+    r = 255.0 - char1_image["image"]
+    g = 255.0 - move_image(char2_image["image"], *offset)
     b = np.zeros_like(r)
     overlap = np.minimum(g, r) > 0
     b[overlap] = 0.5 * (r[overlap] + g[overlap])

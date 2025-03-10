@@ -30,7 +30,7 @@ _missing_fonts = []
 _remapped_fonts = {}
 
 
-def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extrabold: bool) -> bool:
+def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, dy_mode: str, use_extrabold: bool) -> bool:
     """
     Sets up a boldened version of a font for overlay.
     """
@@ -38,13 +38,9 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extra
     if remapping := _get_remapping(identifier):
         identifier = remapping["overlay_font"]
         size *= remapping["font_scale"]
-        canvas._char_offsets = remapping["offsets"] if "offsets" in remapping else None
-        if "offsets" in remapping:
-            canvas._char_offsets = {k: (v[0][0] * size, v[0][1] * size) for k, v in remapping["offsets"].items()}
-        else:
-            canvas._char_offsets = None
+        char_offsets = _get_offsets(remapping, size, dy_mode)
     else:
-        canvas._char_offsets = None
+        char_offsets = None
         try:
             identifier = _bolden(identifier)
         except FontIsExtraboldException:
@@ -68,7 +64,23 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extra
         _registered_fonts.append(identifier)
 
     canvas.setFont(identifier, size)
-    return (identifier, size)
+
+    return {
+        "name": identifier,
+        "size": size,
+        "char_offsets": char_offsets,
+    }
+
+
+def _get_offsets(remapping: dict, size: float, dy_mode: str):
+    if "characters" not in remapping:
+        return None
+    assert dy_mode in ["median", "individual"]
+    return {
+        k: (v["offset"][0] * size,
+            (remapping["median_y_offset"] if dy_mode == "median" else v["offset"][1]) * size)
+        for k, v in remapping["characters"].items()
+    }
 
 
 def _get_remapping(identifier: str) -> dict:

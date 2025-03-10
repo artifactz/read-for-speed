@@ -1,4 +1,4 @@
-import math, re, os, tempfile
+import math, re, os, tempfile, collections
 from typing import IO
 from tqdm import tqdm
 import pdfplumber
@@ -117,8 +117,29 @@ def _disassemble_ligatures(chars, overlay_font_name):
     return new_chars
 
 
-def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, use_extrabold=False):
-    """Draws the overlay for the page to the canvas."""
+def _draw_bbox(canvas: Canvas, chars: list):
+    """Draws a filled bounding box on the characters to hide them."""
+    # Group by y in case chars are on multiple lines
+    y_chars = collections.defaultdict(list)
+    for char in chars:
+        y_chars[char["matrix"][5]].append(char)
+    # Draw one box per line
+    for line_chars in y_chars.values():
+        left = min(char["x0"] for char in line_chars)
+        right = max(char["x1"] for char in line_chars)
+        top = max(char["y1"] for char in line_chars)
+        bottom = min(char["y0"] for char in line_chars)
+        canvas.setFillColorRGB(255, 255, 255)
+        canvas.rect(left, bottom, right - left, top - bottom, stroke=0, fill=1)
+        canvas.setFillColorRGB(0, 0, 0)
+
+
+def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, draw_bbox=True, dy_mode="median", use_extrabold=False):
+    """
+    Draws the overlay for the page to the canvas.
+    :param use_extrabold: Will overlay bold text with extrabold text. Skip otherwise.
+    :param dy_mode: How to position characters vertically. Either "median" or "individual" (per char).
+    """
     font_names = set()
     total_words = 0
     successful_words = 0
@@ -145,7 +166,8 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, use_extrabold=
         if (font_name, font_size) != current_font:
             current_font = (font_name, font_size)
             font_names.add(font_name)
-            if not (overlay_font := fonts.setup_boldened_font(canvas, font_name, font_size, use_extrabold)):
+            overlay_font = fonts.setup_boldened_font(canvas, font_name, font_size, dy_mode, use_extrabold)
+            if not overlay_font:
                 current_font_is_valid = False
                 continue
             current_font_is_valid = True
@@ -153,17 +175,20 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, use_extrabold=
         if not current_font_is_valid:
             continue
 
-        chars = _disassemble_ligatures(chars, overlay_font[0])
+        chars = _disassemble_ligatures(chars, overlay_font["name"])
+
+        if draw_bbox:
+            _draw_bbox(canvas, chars)  # TODO: extract line detection for box-based char re-arrangement
 
         for char in chars:
             x = char["x0"]
             y = char["matrix"][5]
             character = char["text"]
-            if canvas._char_offsets is None:
+            if overlay_font["char_offsets"] is None:
                 dx, dy = 0, 0
             else:
                 offset_char = CHAR_MAP.get(character, character)
-                dx, dy = canvas._char_offsets.get(offset_char, (0, 0))
+                dx, dy = overlay_font["char_offsets"].get(offset_char, (0, 0))
             canvas.drawString(x + dx, y - dy, character)  # reportlab y axis is down-top
 
         successful_words += 1
@@ -259,8 +284,8 @@ def add_text_overlay(input_pdf_path: str, output_pdf_path: str):
 
 
 if __name__ == "__main__":
-    input_pdf_path = "sample25.pdf"
-    output_pdf_path = "output25.pdf"
+    input_pdf_path = "samples/sample14.pdf"
+    output_pdf_path = "samples/output14.pdf"
     metdata = add_text_overlay(input_pdf_path, output_pdf_path)
     print("Metadata:", metdata)
     print(f"Overlay added successfully. Saved as {output_pdf_path}")
