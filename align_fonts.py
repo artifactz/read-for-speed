@@ -15,6 +15,17 @@ OUTPUT_FOLDER = "out"
 REMAP_FOLDER = "remap"
 
 
+def run_pool(font_map: dict, install_remap=False, verbose=False):
+    import multiprocessing
+    pool = multiprocessing.Pool()
+    args_list = [(overlay_font_path, base_font_path, install_remap, verbose)
+                 for overlay_font_path, base_font_path in font_map.items()]
+    list(tqdm(
+        pool.imap_unordered(run_wrapper, args_list),
+        total=len(font_map)
+    ))
+
+
 def run(overlay_font_path, base_font_path, install_remap=False, verbose=True):
     Path(OUTPUT_FOLDER).mkdir(exist_ok=True)
 
@@ -222,7 +233,7 @@ def draw_char_overlay(char: str, overlay_font, base_font, offset):
 
 
 def run_wrapper(arg):
-    run(*arg, install_remap=True, verbose=False)
+    run(*arg)
 
 
 def regenerate_remappings():
@@ -230,8 +241,6 @@ def regenerate_remappings():
     Re-runs alignment for the current selection of open fonts as substitutes to their corresponding proprietary font.
     Copies the result to the remap/ folder to be used by pdf_overlay.
     """
-    import multiprocessing
-
     font_map = {
         "fonts/Junicode-BoldItalic.ttf": "proprietary/fonts/AGaramond-Italic.otf",
         "fonts/EBGaramond-Bold.ttf": "proprietary/fonts/AGaramond.otf",
@@ -256,15 +265,23 @@ def regenerate_remappings():
         "fonts/DejaVuSans-BoldItalic.ttf": "proprietary/fonts/Verdana-Italic.ttf",
         "fonts/DejaVuSans-Bold.ttf": "proprietary/fonts/Verdana.ttf",
     }
-
-    pool = multiprocessing.Pool()
-    list(tqdm(
-        pool.imap_unordered(run_wrapper, font_map.items()),
-        total=len(font_map)
-    ))
+    run_pool(font_map, install_remap=True)
 
 
 if __name__ == "__main__":
-    regenerate_remappings()
+    # regenerate_remappings()
 
-    # run("fonts/Junicode-BoldItalic.ttf", "trash/fonts/AGaramond-Italic.otf")
+    run_pool({
+        "proprietary/download/urw-core35-fonts-master/C059-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
+        "proprietary/download/urw-core35-fonts-master/NimbusMonoPS-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
+        "proprietary/download/urw-core35-fonts-master/NimbusRoman-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
+        "proprietary/download/urw-core35-fonts-master/NimbusSans-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
+        "proprietary/download/urw-core35-fonts-master/NimbusSansNarrow-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
+        "proprietary/download/urw-core35-fonts-master/P052-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
+        "proprietary/download/urw-core35-fonts-master/URWBookman-Demi.ttf": "proprietary/fonts/URWPalladioL.otf",
+        "proprietary/download/urw-core35-fonts-master/URWBookman-Light.ttf": "proprietary/fonts/URWPalladioL.otf",
+        "proprietary/download/urw-core35-fonts-master/URWGothic-Book.ttf": "proprietary/fonts/URWPalladioL.otf",
+        "proprietary/download/urw-core35-fonts-master/URWGothic-Demi.ttf": "proprietary/fonts/URWPalladioL.otf",
+    })
+
+    run("proprietary/download/urw-core35-fonts-master/ttf/P052.ttf", "proprietary/fonts/URWPalladioL.otf")
