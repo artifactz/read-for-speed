@@ -38,15 +38,18 @@ CHAR_MAP = {
 }
 
 
-def _get_emphasized_part(word_chars):
+def _split_emphasized_part(word_chars):
     if len(word_chars) < 2:
-        return []
+        return [], word_chars
 
     word = "".join(char["text"] for char in word_chars)
 
-    # Word consists of digits, optionally followed by up to 2 letters, or is upper case
-    if re.match(r"^\d+(?:\w|\w\w)?$", word) or word == word.upper():
-        return []
+    if (
+        re.match(r"^\d+(?:\w|\w\w)?$", word) or  # Word consists of digits, optionally followed by up to 2 letters
+        word == word.upper() or  # Word is upper case
+        (word[-1] == "s" and word[:-1] == word[:-1].upper())  # Word is upper case/plural
+    ):
+        return [], word_chars
 
     # Don't include standalone umlaut chars in length
     num_umlauts = sum(1 for char in word_chars if char["text"] == "¨")
@@ -58,7 +61,7 @@ def _get_emphasized_part(word_chars):
             if word_chars[end - 1]["text"] != "¨":
                 break
 
-    return word_chars[:end]
+    return word_chars[:end], word_chars[end:]
 
 
 def group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>§$%&_'"„“‚‘«»→—="""):
@@ -117,18 +120,34 @@ def _disassemble_ligatures(chars, overlay_font_name):
     return new_chars
 
 
-def _draw_bbox(canvas: Canvas, chars: list):
-    """Draws a filled bounding box on the characters to hide them."""
+def _draw_bbox(canvas: Canvas, chars: list, remaining_chars: list, top_pad_ratio=0.02):
+    """
+    Draws a filled bounding box on the characters to hide them (per line).
+    :param top_pad_ratio: Additionally moves the top upwards to compensate for the under-estimated height of some fonts.
+    """
     # Group by y in case chars are on multiple lines
     y_chars = collections.defaultdict(list)
     for char in chars:
         y_chars[char["matrix"][5]].append(char)
+    char_lines = list(y_chars.values())
     # Draw one box per line
-    for line_chars in y_chars.values():
+    for i, line_chars in enumerate(char_lines):
         left = min(char["x0"] for char in line_chars)
         right = max(char["x1"] for char in line_chars)
         top = max(char["y1"] for char in line_chars)
         bottom = min(char["y0"] for char in line_chars)
+
+        # Avoid drawing over the next character when their bounding boxes overlap
+        if (
+            i == len(char_lines) - 1 and remaining_chars and
+            remaining_chars[0]["matrix"][5] == line_chars[-1]["matrix"][5] and
+            remaining_chars[0]["x0"] < right
+        ):
+            right = remaining_chars[0]["x0"]
+
+        if top_pad_ratio:
+            top += (top - bottom) * top_pad_ratio
+
         canvas.setFillColorRGB(255, 255, 255)
         canvas.rect(left, bottom, right - left, top - bottom, stroke=0, fill=1)
         canvas.setFillColorRGB(0, 0, 0)
@@ -152,10 +171,10 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, draw_bbox=True
     for word in words:
         word_str = "".join(char["text"] for char in word)  # useful when debugging
 
-        # if word_str == "Research":
+        # if word_str == "We":
         #     print("break")
 
-        chars = _get_emphasized_part(word)
+        chars, remaining_chars = _split_emphasized_part(word)
         if not chars:
             continue
 
@@ -178,7 +197,7 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, draw_bbox=True
         chars = _disassemble_ligatures(chars, overlay_font["name"])
 
         if draw_bbox:
-            _draw_bbox(canvas, chars)  # TODO: extract line detection for box-based char re-arrangement
+            _draw_bbox(canvas, chars, remaining_chars)  # TODO: extract line detection for box-based char re-arrangement
 
         for char in chars:
             x = char["x0"]
@@ -284,8 +303,8 @@ def add_text_overlay(input_pdf_path: str, output_pdf_path: str):
 
 
 if __name__ == "__main__":
-    input_pdf_path = "samples/sample14.pdf"
-    output_pdf_path = "samples/output14.pdf"
+    input_pdf_path = "samples/sample29.pdf"
+    output_pdf_path = "samples/output29.pdf"
     metdata = add_text_overlay(input_pdf_path, output_pdf_path)
     print("Metadata:", metdata)
     print(f"Overlay added successfully. Saved as {output_pdf_path}")
