@@ -10,7 +10,7 @@ class FontIsExtraboldException(Exception):
 FONT_DIR = f'{os.path.dirname(__file__)}/fonts'
 
 
-# font name synonyms, i.e. mapping to font file name
+# font name synonyms, i.e. mapping to font file name (keys allow regex)
 FONT_MAP = {
     "CMSS": "ComputerModernSans",
     "CMR": "ComputerModernSerif",
@@ -21,6 +21,7 @@ FONT_MAP = {
     "STIXGeneral": "STIXTwoText",
     "Times": "TimesNewRoman",
     "TimesNewer": "TimesNewerRoman",
+    "URWPalladioL": "P052",
 }
 
 
@@ -58,7 +59,6 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, dy_mode: 
         try:
             pdfmetrics.registerFont(TTFont(identifier, f"{FONT_DIR}/{identifier}.ttf"))
         except TTFError:
-            print(f"Missing font: {identifier}")
             _missing_fonts.append(identifier)
             return None
         _registered_fonts.append(identifier)

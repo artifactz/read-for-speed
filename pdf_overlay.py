@@ -100,6 +100,7 @@ def _disassemble_ligatures(chars, overlay_font_name):
         'LinLibertine-Bold': {'ffi': [0.0, 0.27, 0.56], 'fi': [0.0, 0.29], 'ff': [0.0, 0.29], 'fl': [0.0, 0.27]},
         'Mignon-Bold': {'ffi': [0.0, 0.275, 0.56], 'fi': [0.0, 0.3], 'ff': [0.0, 0.29], 'fl': [0.0, 0.27], 'Th': [0.0, 0.52]},
         'CrimsonText-Bold': {'fi': [0.0, 0.29], 'fl': [0.0, 0.30]},
+        'P052-Bold': {'fi': [0.0, 0.325], 'fl': [0.0, 0.34]},
     }
 
     new_chars = []
