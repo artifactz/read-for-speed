@@ -97,10 +97,11 @@ def _disassemble_ligatures(chars, overlay_font_name):
     """Disassembles ligatures into individual, correctly positioned characters."""
     STRIDES = {
         'ComputerModernSerif-Bold': {'ffi': [0.0, 0.27, 0.57], 'fi': [0.0, 0.29], 'ff': [0.0, 0.29], 'fl': [0.0, 0.29]},
+        'CrimsonText-Bold': {'fi': [0.0, 0.29], 'fl': [0.0, 0.30]},
         'LinLibertine-Bold': {'ffi': [0.0, 0.27, 0.56], 'fi': [0.0, 0.29], 'ff': [0.0, 0.29], 'fl': [0.0, 0.27]},
         'Mignon-Bold': {'ffi': [0.0, 0.275, 0.56], 'fi': [0.0, 0.3], 'ff': [0.0, 0.29], 'fl': [0.0, 0.27], 'Th': [0.0, 0.52]},
-        'CrimsonText-Bold': {'fi': [0.0, 0.29], 'fl': [0.0, 0.30]},
         'P052-Bold': {'fi': [0.0, 0.325], 'fl': [0.0, 0.34]},
+        'TimesNewerRoman-Bold': {'fi': [0.0, 0.305], 'fl': [0.0, 0.305]},
     }
 
     new_chars = []
@@ -251,7 +252,7 @@ def generate_text_overlay(input_pdf_path):
     print("Missing fonts:", fonts._missing_fonts)
 
     success_ratio = successful_words / total_words if total_words > 0 else 0
-    has_encrypted_fonts = any("AdvOT" in f for f in fonts._missing_fonts)
+    has_encrypted_fonts = any("AdvOT" in f or "AdvTT" in f for f in fonts._missing_fonts)
     summary = "warning" if success_ratio < 0.5 or has_encrypted_fonts else "ok"
 
     return {
@@ -282,6 +283,8 @@ def add_text_overlay_file(input_pdf_path: str, output_pdf_file: IO):
             overlay_page = overlay_reader.pages[page_number]
             page.merge_page(overlay_page)
             writer.add_page(page)
+
+    writer.add_metadata(reader.metadata)
 
     # Save the output PDF
     print("Saving output document.")
