@@ -128,6 +128,9 @@ def _disambiguate_identifier(pdf_identifier: str) -> str:
     splits = family_name.split(splitter, maxsplit=1)
     family_name = splits[0]
 
+    # Strip Standard suffix
+    family_name = family_name.removesuffix("Std")
+
     # Strip Monotype suffix
     family_name = family_name.removesuffix("MT")
 
