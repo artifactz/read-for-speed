@@ -299,7 +299,7 @@ def generate_text_overlay(input_pdf_path):
     print("Missing fonts:", fonts._missing_fonts)
 
     success_ratio = successful_words / total_words if total_words > 0 else 0
-    has_encrypted_fonts = any("AdvOT" in f or "AdvTT" in f for f in fonts._missing_fonts)
+    has_encrypted_fonts = any("AdvOT" in f or "AdvTT" in f or "AdvP" in f for f in fonts._missing_fonts)
     summary = "warning" if success_ratio < 0.5 or has_encrypted_fonts else "ok"
 
     return {
