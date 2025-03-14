@@ -116,7 +116,7 @@ def optimize_offset(char, overlay_font, ref_font):
         offset = tuple(np.asarray(offset) + neighbors[i])
 
     remainder = remainders[offset] / (ref_img["image"].shape[0] * ref_img["image"].shape[1])  # absolute number of pixels to ratio
-    initial_x_offset = overlay_img["bbox"][0] - ref_img["bbox"][0]  # from horizontal centering
+    initial_x_offset = overlay_img["xy"][0] - ref_img["xy"][0]  # from horizontal centering
     offset = (offset[0] + initial_x_offset, offset[1])
     offset = tuple(np.asarray(offset) / overlay_font.size)
     size = ((overlay_img["bbox"][2] - overlay_img["bbox"][0]) / overlay_font.size,
@@ -166,7 +166,8 @@ def create_char_image(char, font, image_size=None, x=None):
 
     return {
         "image": image_array,
-        "bbox": (bb[0] + x, bb[1] + y, bb[2] + x, bb[3] + y)
+        "bbox": (bb[0] + x, bb[1] + y, bb[2] + x, bb[3] + y),
+        "xy": (x, y)
     }
 
 
@@ -219,7 +220,6 @@ def draw_char_overlay(char: str, overlay_font, base_font, offset):
     Draws both the base and overlay version of the character and highlights remainder pixels.
     """
     offset = (int(offset[0] * overlay_font.size), int(offset[1] * overlay_font.size))
-    # img1, x = create_char_image(char, base_font)
     char1_image = create_char_image(char, base_font)
     w, h, x = char1_image["image"].shape[1], char1_image["image"].shape[0], char1_image["bbox"][0]
     char2_image = create_char_image(char, overlay_font, (w, h), x)
@@ -230,6 +230,13 @@ def draw_char_overlay(char: str, overlay_font, base_font, offset):
     b[overlap] = 0.5 * (r[overlap] + g[overlap])
     img = np.stack([b, g, r], axis=2)
     return img
+
+
+def show_image(img):
+    """Debugging helper."""
+    cv2.imshow("image", img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 
 def run_wrapper(arg):
