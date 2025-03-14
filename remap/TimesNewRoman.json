@@ -2,6 +2,7 @@
   "base_font": "TimesNewRoman",
   "overlay_font": "TimesNewerRoman-Bold",
   "font_scale": 1.0134548611111112,
+  "config": {"typesetting_mode": "rearranged"},
   "characters": {
     "a": {
       "size": [

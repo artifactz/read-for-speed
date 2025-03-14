@@ -1,4 +1,4 @@
-import re, os, json
+import re, os, json, functools
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont, TTFError
 
@@ -31,17 +31,24 @@ _missing_fonts = []
 _remapped_fonts = {}
 
 
-def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, dy_mode: str, use_extrabold: bool) -> bool:
+@functools.cache
+def get_char_width(char: str, font_name: str, font_size: float):
+    return pdfmetrics.stringWidth(char, font_name, font_size)
+
+
+def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extrabold: bool) -> bool:
     """
     Sets up a boldened version of a font for overlay.
     """
+    result = {}
     identifier = _disambiguate_identifier(pdf_font_identifier)
     if remapping := _get_remapping(identifier):
         identifier = remapping["overlay_font"]
         size *= remapping["font_scale"]
-        char_offsets = _get_offsets(remapping, size, dy_mode)
+        result["char_offsets"] = _get_offsets(remapping, size)
+        result["median_y_offset"] = remapping["median_y_offset"] * size
+        result["config"] = remapping.get("config")
     else:
-        char_offsets = None
         try:
             identifier = _bolden(identifier)
         except FontIsExtraboldException:
@@ -68,19 +75,14 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, dy_mode: 
     return {
         "name": identifier,
         "size": size,
-        "char_offsets": char_offsets,
+        **result
     }
 
 
-def _get_offsets(remapping: dict, size: float, dy_mode: str):
-    if "characters" not in remapping:
+def _get_offsets(remapping: dict, font_size: float):
+    if not remapping.get("characters"):
         return None
-    assert dy_mode in ["median", "individual"]
-    return {
-        k: (v["offset"][0] * size,
-            (remapping["median_y_offset"] if dy_mode == "median" else v["offset"][1]) * size)
-        for k, v in remapping["characters"].items()
-    }
+    return {k: (v["offset"][0] * font_size, v["offset"][1] * font_size) for k, v in remapping["characters"].items()}
 
 
 def _get_remapping(identifier: str) -> dict:
