@@ -102,21 +102,13 @@ def group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>�
 
 def _disassemble_ligatures(chars, overlay_font_name):
     """Disassembles ligatures into individual, correctly positioned characters."""
-    STRIDES = {
-        'ComputerModernSerif-Bold': {'ffi': [0.0, 0.27, 0.57], 'fi': [0.0, 0.29], 'ff': [0.0, 0.29], 'fl': [0.0, 0.29]},
-        'CrimsonText-Bold': {'fi': [0.0, 0.29], 'fl': [0.0, 0.30]},
-        'LinLibertine-Bold': {'ffi': [0.0, 0.27, 0.56], 'fi': [0.0, 0.29], 'ff': [0.0, 0.29], 'fl': [0.0, 0.27]},
-        'Mignon-Bold': {'ffi': [0.0, 0.275, 0.56], 'fi': [0.0, 0.3], 'ff': [0.0, 0.29], 'fl': [0.0, 0.27], 'Th': [0.0, 0.52]},
-        'P052-Bold': {'fi': [0.0, 0.325], 'fl': [0.0, 0.34]},
-        'TimesNewerRoman-Bold': {'fi': [0.0, 0.305], 'fl': [0.0, 0.305]},
-    }
-
     result_chars = []
     for char in chars:
         # Ligatures mostly appear as char sequences, but sometimes as a single char
         char["text"] = char["text"].replace("ﬁ", "fi").replace("ﬂ", "fl").replace("ﬀ", "ff").replace("ﬃ", "ffi")
 
-        if len(char["text"]) > 1 and (fs := STRIDES.get(overlay_font_name)) and (strides := fs.get(char["text"])):
+        if len(char["text"]) > 1:
+            strides = fonts.get_ligature_strides(char["text"], overlay_font_name)
             # Disassemble
             for s, c in zip(strides, char["text"]):
                 new_char = char.copy()
@@ -362,8 +354,8 @@ def add_text_overlay(input_pdf_path: str, output_pdf_path: str):
 
 
 if __name__ == "__main__":
-    input_pdf_path = "samples/sample36.pdf"
-    output_pdf_path = "samples/output36.pdf"
+    input_pdf_path = "samples/sample37.pdf"
+    output_pdf_path = "samples/output37.pdf"
     metdata = add_text_overlay(input_pdf_path, output_pdf_path)
     print("Metadata:", metdata)
     print(f"Overlay added successfully. Saved as {output_pdf_path}")

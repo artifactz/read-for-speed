@@ -1,4 +1,5 @@
 import re, os, json, functools
+import numpy as np
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont, TTFError
 
@@ -29,6 +30,26 @@ FONT_MAP = {
 _registered_fonts = ['Helvetica', 'Helvetica-Bold', 'Helvetica-BoldOblique']
 _missing_fonts = []
 _remapped_fonts = {}
+
+
+def get_ligature_strides(text: str, overlay_font_name: str):
+    """
+    Returns the character spacing of a ligature with the given font.
+    If it isn't known, calculates the average of all known fonts.
+    """
+    STRIDES = {
+        'ComputerModernSerif-Bold': {'ffi': [0.0, 0.27, 0.57], 'fi': [0.0, 0.29], 'ff': [0.0, 0.29], 'fl': [0.0, 0.29]},
+        'CrimsonText-Bold': {'fi': [0.0, 0.29], 'fl': [0.0, 0.30]},
+        'LinLibertine-Bold': {'ffi': [0.0, 0.27, 0.56], 'fi': [0.0, 0.29], 'ff': [0.0, 0.29], 'fl': [0.0, 0.27]},
+        'Mignon-Bold': {'ffi': [0.0, 0.275, 0.56], 'fi': [0.0, 0.3], 'ff': [0.0, 0.29], 'fl': [0.0, 0.27], 'Th': [0.0, 0.52]},
+        'P052-Bold': {'fi': [0.0, 0.325], 'fl': [0.0, 0.34]},
+        'TimesNewerRoman-Bold': {'fi': [0.0, 0.305], 'fl': [0.0, 0.305]},
+    }
+    if (fs := STRIDES.get(overlay_font_name)) and (strides := fs.get(text)):
+        return strides
+    # use average of other fonts
+    others = [strides[text] for strides in STRIDES.values() if text in strides]
+    return list(np.mean(others, axis=0))
 
 
 @functools.cache
