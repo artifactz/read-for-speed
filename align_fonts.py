@@ -2,7 +2,7 @@
 Script to calculate offsets for the characters of a font in order to align them (pixel-wise) to another font.
 """
 
-import json, base64
+import json, base64, multiprocessing
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
@@ -16,12 +16,11 @@ REMAP_FOLDER = "remap"
 
 
 def run_pool(font_map: dict, install_remap=False, verbose=False):
-    import multiprocessing
     pool = multiprocessing.Pool()
     args_list = [(overlay_font_path, base_font_path, install_remap, verbose)
                  for overlay_font_path, base_font_path in font_map.items()]
     list(tqdm(
-        pool.imap_unordered(run_wrapper, args_list),
+        pool.imap_unordered(_run_wrapper, args_list),
         total=len(font_map)
     ))
 
@@ -32,11 +31,15 @@ def run(overlay_font_path, base_font_path, install_remap=False, verbose=True):
     if verbose:
         print("Optimizing", Path(overlay_font_path).stem, "on", Path(base_font_path).stem, "...", flush=True)
     result = align_font(overlay_font_path, base_font_path)
+    store_result(result, install_remap, verbose)
+
+
+def store_result(result: dict, install_remap=False, verbose=True):
     if verbose:
         print("Writing json...", flush=True)
     write_json(result)
     if install_remap:
-        write_json(result, f"{REMAP_FOLDER}/{Path(base_font_path).stem}.json")
+        write_json(result, f"{REMAP_FOLDER}/{Path(result['base_font_path']).stem}.json")
 
     if verbose:
         print("Writing report...", flush=True)
@@ -51,15 +54,16 @@ def align_font(overlay_font_path, base_font_path, font_size=128, score_epsilon=1
         results = [align_font_instance(ImageFont.truetype(overlay_font_path, scale * font_size), base_font)
                    for scale in scales]
         min_i = np.argmin([r["average_remainder"] for r in results])
-        assert 0 < min_i < len(results) - 1, "Initial bounds are too narrow."
-        low_scale, high_scale = scales[min_i - 1], scales[min_i + 1]
+        is_within_bounds = bool(0 < min_i < len(results) - 1)
 
         if (
+            not is_within_bounds or
             (abs(results[min_i - 1]["average_remainder"] - results[min_i]["average_remainder"]) < score_epsilon and
              abs(results[min_i + 1]["average_remainder"] - results[min_i]["average_remainder"]) < score_epsilon) or
-            high_scale - low_scale < scale_epsilon
+            scales[min_i + 1] - scales[min_i - 1] < scale_epsilon
         ):
             return {
+                "converged": is_within_bounds,
                 "base_font": Path(base_font_path).stem,
                 "base_font_path": base_font_path,
                 "overlay_font": Path(overlay_font_path).stem,
@@ -67,6 +71,8 @@ def align_font(overlay_font_path, base_font_path, font_size=128, score_epsilon=1
                 "font_scale": scales[min_i],
                 **results[min_i]
             }
+
+        low_scale, high_scale = scales[min_i - 1], scales[min_i + 1]
 
 
 def align_font_instance(overlay_font: ImageFont.FreeTypeFont, base_font: ImageFont.FreeTypeFont, charset=DEFAULT_CHARS) -> dict:
@@ -177,6 +183,7 @@ def write_json(align_font_result, path=None):
     align_font_result = dict(align_font_result)
     del align_font_result["base_font_path"]
     del align_font_result["overlay_font_path"]
+    del align_font_result["converged"]
     with open(path, "w") as f:
         json.dump(align_font_result, f, indent=2)
 
@@ -186,11 +193,16 @@ def write_report(align_font_result, charset=DEFAULT_CHARS, font_size=128):
     base_font = ImageFont.truetype(align_font_result["base_font_path"], font_size)
     overlay_font = ImageFont.truetype(align_font_result["overlay_font_path"], align_font_result['font_scale'] * font_size)
 
-    with open(f"{OUTPUT_FOLDER}/{filename}", "w") as f:
-        f.write("<html><head><style>"
+    with open(f"{OUTPUT_FOLDER}/{filename}", "w", encoding="utf-8") as f:
+        f.write("<html><head><meta charset=\"UTF-8\"><style>"
+                "body {"
+                "  background-color: #222;"
+                "  color: #ffffff;"
+                "  font-family: 'OpenSansLight', 'Helvetica Neue', Helvetica, Arial, sans-serif;"
+                "}"
                 "table, th, td {"
                 "  border-collapse: collapse;"
-                "  border: 1px solid #ccc;"
+                "  border: 1px solid #444;"
                 "}"
                 "th, td {"
                 "  padding: 5px;"
@@ -198,6 +210,8 @@ def write_report(align_font_result, charset=DEFAULT_CHARS, font_size=128):
                 "}"
                 "</style></head><body>")
         f.write(f"<h1>{align_font_result['overlay_font']} on {align_font_result['base_font']}</h1>")
+        if not align_font_result["converged"]:
+            f.write("<span style=\"font-size: 1.5em;\">⚠&ensp;Optimization was unsuccessful.</span>")
         f.write(f"<h2>Font scale: {align_font_result['font_scale']}</h2>")
         f.write(f"<h2>Average remainder: {align_font_result['average_remainder'] * 100:.5f}%</h2>")
         f.write("<table>")
@@ -221,7 +235,7 @@ def draw_char_overlay(char: str, overlay_font, base_font, offset):
     """
     offset = (int(offset[0] * overlay_font.size), int(offset[1] * overlay_font.size))
     char1_image = create_char_image(char, base_font)
-    w, h, x = char1_image["image"].shape[1], char1_image["image"].shape[0], char1_image["bbox"][0]
+    w, h, x = char1_image["image"].shape[1], char1_image["image"].shape[0], char1_image["xy"][0]
     char2_image = create_char_image(char, overlay_font, (w, h), x)
     r = 255.0 - char1_image["image"]
     g = 255.0 - move_image(char2_image["image"], *offset)
@@ -239,8 +253,12 @@ def show_image(img):
     cv2.destroyAllWindows()
 
 
-def run_wrapper(arg):
-    run(*arg)
+def _run_wrapper(arg):
+    return run(*arg)
+
+
+def _align_font_wrapper(arg):
+    return align_font(*arg)
 
 
 def regenerate_remappings():
@@ -275,20 +293,37 @@ def regenerate_remappings():
     run_pool(font_map, install_remap=True)
 
 
+def find_best_font_matches(base_font_path, n=10):
+    """
+    Finds the best overlay fonts in the fonts/ folder for the given font.
+    Stores and prints top `n` results.
+    """
+    fonts = list(Path("fonts").glob("*.ttf"))
+    pool = multiprocessing.Pool()
+    results = list(tqdm(pool.imap_unordered(_align_font_wrapper, [(str(f), base_font_path) for f in fonts]), total=len(fonts)))
+    pool.close()
+    sorted_results = sorted(results, key=lambda x: x["average_remainder"])
+    for result in sorted_results[:n]:
+        print(result["overlay_font"] + " " + str(result["average_remainder"]))
+        store_result(result, verbose=False)
+
+
 if __name__ == "__main__":
     # regenerate_remappings()
 
-    run_pool({
-        "proprietary/download/urw-core35-fonts-master/C059-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
-        "proprietary/download/urw-core35-fonts-master/NimbusMonoPS-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
-        "proprietary/download/urw-core35-fonts-master/NimbusRoman-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
-        "proprietary/download/urw-core35-fonts-master/NimbusSans-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
-        "proprietary/download/urw-core35-fonts-master/NimbusSansNarrow-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
-        "proprietary/download/urw-core35-fonts-master/P052-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
-        "proprietary/download/urw-core35-fonts-master/URWBookman-Demi.ttf": "proprietary/fonts/URWPalladioL.otf",
-        "proprietary/download/urw-core35-fonts-master/URWBookman-Light.ttf": "proprietary/fonts/URWPalladioL.otf",
-        "proprietary/download/urw-core35-fonts-master/URWGothic-Book.ttf": "proprietary/fonts/URWPalladioL.otf",
-        "proprietary/download/urw-core35-fonts-master/URWGothic-Demi.ttf": "proprietary/fonts/URWPalladioL.otf",
-    })
+    # run_pool({
+    #     "proprietary/download/urw-core35-fonts-master/C059-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
+    #     "proprietary/download/urw-core35-fonts-master/NimbusMonoPS-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
+    #     "proprietary/download/urw-core35-fonts-master/NimbusRoman-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
+    #     "proprietary/download/urw-core35-fonts-master/NimbusSans-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
+    #     "proprietary/download/urw-core35-fonts-master/NimbusSansNarrow-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
+    #     "proprietary/download/urw-core35-fonts-master/P052-Bold.ttf": "proprietary/fonts/URWPalladioL.otf",
+    #     "proprietary/download/urw-core35-fonts-master/URWBookman-Demi.ttf": "proprietary/fonts/URWPalladioL.otf",
+    #     "proprietary/download/urw-core35-fonts-master/URWBookman-Light.ttf": "proprietary/fonts/URWPalladioL.otf",
+    #     "proprietary/download/urw-core35-fonts-master/URWGothic-Book.ttf": "proprietary/fonts/URWPalladioL.otf",
+    #     "proprietary/download/urw-core35-fonts-master/URWGothic-Demi.ttf": "proprietary/fonts/URWPalladioL.otf",
+    # })
 
-    run("proprietary/download/urw-core35-fonts-master/ttf/P052.ttf", "proprietary/fonts/URWPalladioL.otf")
+    # run("fonts/Bergamo-BoldItalic.ttf", "proprietary/fonts/PlantinMTPro-Italic.ttf")
+
+    find_best_font_matches("proprietary/fonts/StoneSans.ttf")
