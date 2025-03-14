@@ -1,4 +1,5 @@
 import re, os, json, functools
+from pathlib import Path
 import numpy as np
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont, TTFError
@@ -28,6 +29,7 @@ FONT_MAP = {
 
 # Reportlab comes with the Helvetica font, so we don't need to register it.
 _registered_fonts = ['Helvetica', 'Helvetica-Bold', 'Helvetica-BoldOblique']
+_available_fonts = [p.stem for p in Path(FONT_DIR).glob("*.ttf")]
 _missing_fonts = []
 _remapped_fonts = {}
 
@@ -63,6 +65,8 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extra
     """
     result = {}
     identifier = _disambiguate_identifier(pdf_font_identifier)
+    identifier = _handle_times(identifier)
+
     if remapping := _get_remapping(identifier):
         identifier = remapping["overlay_font"]
         size *= remapping["font_scale"]
@@ -233,6 +237,21 @@ def _bolden(identifier: str):
         assert modifiers == "Italic"
         modifiers = "BoldItalic"
     return f"{family_name}-{modifiers}"
+
+
+def _handle_times(identifier: str):
+    """
+    This is a heuristic to fallback to Times New Roman when the font is unknown but contains "Times".
+    """
+    if identifier in _registered_fonts or identifier in _available_fonts:
+        return identifier
+    if "TimesI" in identifier:
+        return "TimesNewRoman-Italic"
+    if "TimesB" in identifier:
+        return "TimesNewRoman-Bold"
+    if "Times" in identifier:
+        return "TimesNewRoman"
+    return identifier
 
 
 def _handle_helvetica(identifier: str):
