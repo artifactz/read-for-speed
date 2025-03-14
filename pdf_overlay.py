@@ -54,7 +54,7 @@ def _split_emphasized_part(word_chars):
     if (
         re.match(r"^\d+(?:\w|\w\w)?$", word) or  # Word consists of digits, optionally followed by up to 2 letters
         word == word.upper() or  # Word is upper case
-        (word[-1] == "s" and word[:-1] == word[:-1].upper())  # Word is upper case/plural
+        (len(word) > 2 and word[-1] == "s" and word[:-1] == word[:-1].upper())  # Word is upper case/plural
     ):
         return [], word_chars
 
