@@ -14,6 +14,7 @@ FONT_DIR = f'{os.path.dirname(__file__)}/fonts'
 
 # font name synonyms, i.e. mapping to font file name (keys allow regex)
 FONT_MAP = {
+    "AGaramondPro": "AGaramond",
     "CMSS": "ComputerModernSans",
     "CMR": "ComputerModernSerif",
     "CMTI": "ComputerModernSerif-Italic",
@@ -177,7 +178,7 @@ def _disambiguate_identifier(pdf_identifier: str) -> str:
         return family_name
 
     if modifiers := _disambiguate_modifiers(splits[1]):
-        return f"{family_name}-{modifiers}"
+        return family_name + modifiers
 
     # Assuming modifier is Regular, Roman, or similar
     return family_name
@@ -187,6 +188,7 @@ def _disambiguate_modifiers(pdf_modifiers: str):
     pdf_modifiers = pdf_modifiers.lower()  # TODO given the increasing number of formats, verify if really needed
     weight = ""
     italic = ""
+    condensed = ""
     if "light" in pdf_modifiers:
         weight = "Light"
     elif "semibold" in pdf_modifiers:
@@ -197,7 +199,17 @@ def _disambiguate_modifiers(pdf_modifiers: str):
         weight = "Bold"
     if "ital" in pdf_modifiers or "oblique" in pdf_modifiers or "slant" in pdf_modifiers:
         italic = "Italic"
-    return weight + italic
+    if "semicondensed" in pdf_modifiers:
+        condensed = "SemiCondensed"
+    elif "condensed" in pdf_modifiers:
+        condensed = "Condensed"
+    if condensed and (weight + italic):
+        return f"_{condensed}-{weight + italic}"
+    elif condensed:
+        return f"_{condensed}"
+    elif weight + italic:
+        return f"-{weight + italic}"
+    return ""
 
 
 def _disambiguate_capital_modifiers(font_name: str):
