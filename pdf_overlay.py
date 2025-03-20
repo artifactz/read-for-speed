@@ -331,7 +331,7 @@ def add_text_overlay_file(input_pdf_path: str, output_pdf_file: IO):
             page.merge_page(overlay_page)
             writer.add_page(page)
 
-    writer.add_metadata(reader.metadata)
+    _copy_metadata(reader, writer)
 
     # Save the output PDF
     print("Saving output document.")
@@ -342,6 +342,19 @@ def add_text_overlay_file(input_pdf_path: str, output_pdf_file: IO):
     del metadata["path"]
 
     return metadata
+
+
+def _copy_metadata(reader: PdfReader, writer: PdfWriter):
+    """
+    Copies metadata. Skips non-string values to avoid PyPDF2 TypeError.
+    (Reader.metadata may contain non-string values, such as list, but then writer crashes during `write`.)
+    """
+    meta = {}
+    for k in reader.metadata:  # cannot iterate over items() because their values are IndirectObject instead of str
+        if isinstance(value := reader.metadata[k], str):
+            meta[k] = value
+    # writer.get_object(writer._info).update(meta)
+    writer.add_metadata(meta)
 
 
 def add_text_overlay(input_pdf_path: str, output_pdf_path: str):
