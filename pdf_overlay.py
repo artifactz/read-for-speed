@@ -149,6 +149,22 @@ def _draw_bbox(canvas: Canvas, char_lines: list, remaining_chars: list, top_pad_
         canvas.setFillColorRGB(0, 0, 0)
 
 
+def _set_text_color(canvas: Canvas, color: tuple):
+    """
+    Sets the text color to whatever the PDF specifies.
+    """
+    if color is None:
+        canvas.setFillColorRGB(0, 0, 0)
+    elif len(color) == 1:
+        canvas.setFillColorRGB(color[0], color[0], color[0])
+    elif len(color) == 3:
+        canvas.setFillColorRGB(*color)
+    elif len(color) == 4:
+        canvas.setFillColorCMYK(*color)
+    else:
+        canvas.setFillColorRGB(0, 0, 0)
+
+
 def _get_char_lines(chars) -> list[list[dict]]:
     """Groups chars by y in case chars are on multiple lines."""
     y_chars = collections.defaultdict(list)
@@ -256,6 +272,9 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, config=None):
                 typeset_chars = _iter_rearranged_chars(line_chars, overlay_font)
             else:
                 raise ValueError(f"Unknown typesetting mode: {config['typesetting_mode']}")
+
+            _set_text_color(canvas, line_chars[0]["non_stroking_color"])
+
             for x, y, c in typeset_chars:
                 canvas.drawString(x, y, c)
 
