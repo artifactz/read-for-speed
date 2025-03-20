@@ -21,6 +21,7 @@ FONT_MAP = {
     "CMBX": "ComputerModernSerif-Bold",
     "DGMetaSerifScience": "DeGruyterSerif",
     "DGMetaScience": "DeGruyterSans",
+    "NimbusSanL": "NimbusSans",
     "STIXGeneral": "STIXTwoText",
     "Times": "TimesNewRoman",
     "TimesNewer": "TimesNewerRoman",
