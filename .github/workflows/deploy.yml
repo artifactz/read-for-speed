@@ -1,0 +1,37 @@
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  DOCKER_TAG: gcr.io/eye-guide/pdf-processor-service
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCLOUD_SERVICE_KEY }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and Push Docker Image
+        run: |
+          gcloud builds submit --tag "${DOCKER_TAG}"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy pdf-processor-service \
+            --image "${DOCKER_TAG}" \
+            --platform managed \
+            --region europe-west10 \
+            --allow-unauthenticated
