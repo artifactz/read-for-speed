@@ -287,10 +287,9 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, config=None):
     }
 
 
-def generate_text_overlay(input_pdf_path):
+def generate_text_overlay(input_pdf_file: IO | str):
     """
-    Generates an overlay pdf document and returns its path.
-    Returns metadata.
+    Generates a temporary overlay pdf document and returns a metadata dict containing its path.
     """
 
     font_names = set()
@@ -298,7 +297,7 @@ def generate_text_overlay(input_pdf_path):
     successful_words = 0
 
     print("Reading document.")
-    with pdfplumber.open(input_pdf_path) as input_pdf:
+    with pdfplumber.open(input_pdf_file) as input_pdf:
         page_sizes = sorted((page.width, page.height) for page in input_pdf.pages)
         median_page_size = page_sizes[len(page_sizes) // 2]
 
@@ -331,18 +330,18 @@ def generate_text_overlay(input_pdf_path):
     }
 
 
-def add_text_overlay_file(input_pdf_path: str, output_pdf_file: IO):
+def add_text_overlay_file(input_pdf_file: IO | str, output_pdf_file: IO):
     """
     Adds text overlay to the input PDF and writes the output PDF to a file object.
     Returns metadata.
     """
 
     # Write overlay pdf file
-    metadata = generate_text_overlay(input_pdf_path)
+    metadata = generate_text_overlay(input_pdf_file)
 
     # Merge overlay with the original pages
     writer = PdfWriter()
-    reader = PdfReader(input_pdf_path)
+    reader = PdfReader(input_pdf_file)
     with open(metadata["path"], "rb") as overlay_file:
         overlay_reader = PdfReader(overlay_file)
         for page_number, page in enumerate(tqdm(reader.pages, "Merging overlay with original pages")):
@@ -372,7 +371,6 @@ def _copy_metadata(reader: PdfReader, writer: PdfWriter):
     for k in reader.metadata:  # cannot iterate over items() because their values are IndirectObject instead of str
         if isinstance(value := reader.metadata[k], str):
             meta[k] = value
-    # writer.get_object(writer._info).update(meta)
     writer.add_metadata(meta)
 
 
