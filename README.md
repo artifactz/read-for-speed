@@ -1,3 +1,5 @@
+[![Deploy to Google Cloud Run](https://github.com/artifactz/eye-guide/actions/workflows/deploy.yml/badge.svg)](https://github.com/artifactz/eye-guide/actions/workflows/deploy.yml)
+
 # eyeGuide
 
 Enhances readability by bolding the first half of every word in a PDF file.
