@@ -9,7 +9,7 @@ class FontIsExtraboldException(Exception):
     """The specified font is already Extrabold, no bolder version available."""
 
 
-FONT_DIR = f'{os.path.dirname(__file__)}/fonts'
+FONT_DIR = f"{os.path.dirname(__file__)}/fonts"
 
 
 # font name synonyms, i.e. mapping to font file name (keys allow regex)
@@ -30,7 +30,7 @@ FONT_MAP = {
 
 
 # Reportlab comes with the Helvetica font, so we don't need to register it.
-_registered_fonts = ['Helvetica', 'Helvetica-Bold', 'Helvetica-BoldOblique']
+_registered_fonts = ["Helvetica", "Helvetica-Bold", "Helvetica-BoldOblique"]
 _available_fonts = [p.stem for p in Path(FONT_DIR).glob("*.ttf")]
 _missing_fonts = []
 _remapped_fonts = {}
@@ -42,18 +42,25 @@ def get_ligature_strides(text: str, overlay_font_name: str):
     If it isn't known, calculates the average of all known fonts.
     """
     STRIDES = {
-        'ComputerModernSerif-Bold': {'ffi': [0.0, 0.27, 0.57], 'fi': [0.0, 0.29], 'ff': [0.0, 0.29], 'fl': [0.0, 0.29]},
-        'CrimsonText-Bold': {'fi': [0.0, 0.29], 'fl': [0.0, 0.30]},
-        'LinLibertine-Bold': {'ffi': [0.0, 0.27, 0.56], 'fi': [0.0, 0.29], 'ff': [0.0, 0.29], 'fl': [0.0, 0.27]},
-        'Mignon-Bold': {'ffi': [0.0, 0.275, 0.56], 'fi': [0.0, 0.3], 'ff': [0.0, 0.29], 'fl': [0.0, 0.27], 'Th': [0.0, 0.52]},
-        'P052-Bold': {'fi': [0.0, 0.325], 'fl': [0.0, 0.34]},
-        'TimesNewerRoman-Bold': {'fi': [0.0, 0.305], 'fl': [0.0, 0.305]},
+        "ComputerModernSerif-Bold": {"ffi": [0.0, 0.27, 0.57], "fi": [0.0, 0.29], "ff": [0.0, 0.29], "fl": [0.0, 0.29]},
+        "CrimsonText-Bold": {"fi": [0.0, 0.29], "fl": [0.0, 0.3]},
+        "EBGaramond-Bold": {"ffl": [0.0, 0.27, 0.56], "fi": [0.0, 0.29], "fj": [0.0, 0.3], "Th": [0.0, 0.53]},
+        "LinLibertine-Bold": {"ffi": [0.0, 0.27, 0.56], "fi": [0.0, 0.29], "ff": [0.0, 0.29], "fl": [0.0, 0.27]},
+        "Mignon-Bold": {"ffi": [0.0, 0.275, 0.56], "fi": [0.0, 0.3], "ff": [0.0, 0.29], "fl": [0.0, 0.27], "Th": [0.0, 0.52]},
+        "P052-Bold": {"fi": [0.0, 0.325], "fl": [0.0, 0.34]},
+        "TimesNewerRoman-Bold": {"fi": [0.0, 0.305], "fl": [0.0, 0.305], "ft": [0.0, 0.305]},
     }
     if (fs := STRIDES.get(overlay_font_name)) and (strides := fs.get(text)):
         return strides
-    # use average of other fonts
+    # fallback 1: use average of other fonts
     others = [strides[text] for strides in STRIDES.values() if text in strides]
-    return list(np.mean(others, axis=0))
+    if others:
+        return list(np.mean(others, axis=0))
+    # fallback 2: use 90% char width
+    result = [0.]
+    for i, char in enumerate(text[:-1]):
+        result.append(result[i] + 0.9 * get_char_width(char, overlay_font_name, 100.) / 100.)
+    return result
 
 
 @functools.cache
