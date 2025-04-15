@@ -8,7 +8,7 @@ WORKDIR /app
 COPY . .
 
 # Install required Python packages
-RUN pip install --no-cache-dir gunicorn flask msgpack pdfplumber pypdf2 reportlab tqdm numpy
+RUN pip install --no-cache-dir gunicorn flask msgpack pdfplumber pypdf2 reportlab tqdm numpy pillow torch torchvision
 
 # Expose port 8080 for Cloud Run
 EXPOSE 8080

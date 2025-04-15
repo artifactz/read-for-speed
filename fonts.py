@@ -86,27 +86,28 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extra
         try:
             identifier = _bolden(identifier)
         except FontIsExtraboldException:
-            return None
+            return {"state": "too_bold"}
 
     if not use_extrabold and "Extrabold" in identifier:
-        return None
+        return {"state": "too_bold"}
 
     identifier = _handle_helvetica(identifier)
 
     if identifier in _missing_fonts:
-        return None
+        return {"state": "missing", "name": identifier}
 
     if identifier not in _registered_fonts:
         try:
             pdfmetrics.registerFont(TTFont(identifier, f"{FONT_DIR}/{identifier}.ttf"))
         except TTFError:
             _missing_fonts.append(identifier)
-            return None
+            return {"state": "missing", "name": identifier}
         _registered_fonts.append(identifier)
 
     canvas.setFont(identifier, size)
 
     return {
+        "state": "ok",
         "name": identifier,
         "size": size,
         **result

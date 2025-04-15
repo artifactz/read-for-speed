@@ -5,6 +5,7 @@ import pdfplumber
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen.canvas import Canvas
 import fonts
+from ml.font.extract import count_font_characters
 
 
 DEFAULT_CONFIG = {
@@ -43,6 +44,15 @@ CHAR_MAP = {
     "ò": "o",
     "ù": "u",
 }
+
+
+def _is_primary_font_encrypted(pdf: pdfplumber.PDF) -> bool:
+    primary_font = count_font_characters(pdf).most_common(1)[0][0]
+    return _is_encrypted_font(primary_font)
+
+
+def _is_encrypted_font(font_name: str) -> bool:
+    return re.search(r"Adv[A-Z]", font_name) is not None
 
 
 def _split_emphasized_part(word_chars):
@@ -220,14 +230,21 @@ def _iter_rearranged_chars(line_chars, overlay_font):
         yield (x, y, c)
 
 
-def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, config=None):
+def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, remapped_fonts: dict = None, config=None):
     """
     Draws the overlay for the page to the canvas.
-    :param config:  see `DEFAULT_CONFIG`
+
+    :param canvas: Reportlab canvas object to draw on
+    :param page: Pdfplumber page object
+    :param remapped_fonts: Dictionary of font names to replace
+    :param config: See `DEFAULT_CONFIG`
     """
+    remapped_fonts = remapped_fonts or {}
     config = {key: (config[key] if config and key in config else value) for key, value in DEFAULT_CONFIG.items()}
+    original_config = dict(config)
 
     font_names = set()
+    missing_fonts = set()
     total_words = 0
     successful_words = 0
 
@@ -239,7 +256,7 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, config=None):
     for word in words:
         word_str = "".join(char["text"] for char in word)  # useful when debugging
 
-        # if word_str == "bildungshistorischen":
+        # if word_str == "quantification":
         #     print("break")
 
         chars, remaining_chars = _split_emphasized_part(word)
@@ -253,11 +270,16 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, config=None):
         if (font_name, font_size) != current_font:
             current_font = (font_name, font_size)
             font_names.add(font_name)
+            if font_name in remapped_fonts:
+                font_name = remapped_fonts[font_name]
             overlay_font = fonts.setup_boldened_font(canvas, font_name, font_size, config["use_extrabold"])
-            if not overlay_font:
+            if overlay_font["state"] != "ok":
+                if overlay_font["state"] == "missing":
+                    missing_fonts.add(overlay_font["name"])
                 current_font_is_valid = False
                 continue
             current_font_is_valid = True
+            config = dict(original_config)
             if overlay_font.get("config"):
                 config.update(overlay_font["config"])
 
@@ -290,7 +312,8 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, config=None):
     return {
         "total_words": total_words,
         "successful_words": successful_words,
-        "font_names": font_names
+        "font_names": font_names,
+        "missing_fonts": missing_fonts,
     }
 
 
@@ -300,11 +323,23 @@ def generate_text_overlay(input_pdf_file: IO | str):
     """
 
     font_names = set()
+    missing_fonts = set()
     total_words = 0
     successful_words = 0
 
     print("Reading document.")
     with pdfplumber.open(input_pdf_file) as input_pdf:
+        # Check if font names are encrypted
+        if _is_primary_font_encrypted(input_pdf):
+            print("Loading font model.")
+            import ml.font.estimator as fe
+            print("Detecting font.")
+            estimated_font_name, pdf_font_name = fe.estimate_primary_font(input_pdf)
+            remapped_fonts = {pdf_font_name: estimated_font_name}
+        else:
+            remapped_fonts = {}
+
+        # Determine page size
         page_sizes = sorted((page.width, page.height) for page in input_pdf.pages)
         median_page_size = page_sizes[len(page_sizes) // 2]
 
@@ -313,19 +348,22 @@ def generate_text_overlay(input_pdf_file: IO | str):
             canvas = Canvas(overlay_pdf, pagesize=median_page_size)
 
             for page in tqdm(input_pdf.pages, "Generating overlay pages"):
-                page_result = _draw_page_overlay(canvas, page)
+                page_result = _draw_page_overlay(canvas, page, remapped_fonts)
                 canvas.showPage()  # new page
                 font_names |= page_result["font_names"]
+                missing_fonts |= page_result["missing_fonts"]
                 total_words += page_result["total_words"]
                 successful_words += page_result["successful_words"]
             canvas.save()
 
     print("Document fonts:", font_names)
-    print("Missing fonts:", fonts._missing_fonts)
+    print("Missing fonts:", missing_fonts)
 
     success_ratio = successful_words / total_words if total_words > 0 else 0
-    has_encrypted_fonts = any("AdvOT" in f or "AdvTT" in f or "AdvP" in f for f in fonts._missing_fonts)
+    has_encrypted_fonts = any(_is_encrypted_font(f) for f in missing_fonts)
     summary = "warning" if success_ratio < 0.5 or has_encrypted_fonts else "ok"
+
+    font_estimation = {"estimated_primary_font": list(remapped_fonts.values())[0]} if remapped_fonts else {}
 
     return {
         "path": overlay_pdf.name,
@@ -334,6 +372,7 @@ def generate_text_overlay(input_pdf_file: IO | str):
         "successful_words": successful_words,
         "success_ratio": success_ratio,
         "has_encrypted_fonts": has_encrypted_fonts,
+        **font_estimation
     }
 
 
@@ -391,8 +430,8 @@ def add_text_overlay(input_pdf_path: str, output_pdf_path: str):
 
 
 if __name__ == "__main__":
-    input_pdf_path = "samples/sample37.pdf"
-    output_pdf_path = "samples/output37.pdf"
+    input_pdf_path = "samples/encrypted/sample71.pdf"
+    output_pdf_path = "samples/encrypted/output71.pdf"
     metdata = add_text_overlay(input_pdf_path, output_pdf_path)
     print("Metadata:", metdata)
     print(f"Overlay added successfully. Saved as {output_pdf_path}")
