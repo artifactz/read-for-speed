@@ -71,7 +71,15 @@ def _split_emphasized_part(word_chars):
     return word_chars[:end], word_chars[end:]
 
 
-def group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>§$%&_'"„“‚‘«»→—="""):
+def group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>§$%&_'"„“‚‘«»→—=""") -> list[list[dict]]:
+    """
+    Groups characters into words based on their positions and font properties.
+
+    :param chars: List of pdfplumber character dictionaries
+    :param offset_threshold: Distance threshold to consider characters as part of the same word (in points)
+    :param non_word_chars: Word-breaking characters
+    :return: List of words, each word as a list of character dictionaries
+    """
     prev_char = None
     words = []
     word = []
@@ -85,9 +93,8 @@ def group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>�
                 char["x0"] - prev_char["x1"] > offset_threshold or  # Space between words
                 (not was_hyphen and abs(char["x0"] - prev_char["x1"]) > offset_threshold and
                  abs(char["matrix"][5] - prev_char["matrix"][5]) > offset_threshold) or  # New paragraph
-                char["fontname"] != prev_char["fontname"] or  # Different font
-                char["size"] != prev_char["size"] or  # Different font size
                 char["text"] in non_word_chars  # Word-breaking char
+                # Cannot check for change of font, e.g., there are documents which use a different font for ligatures
             ):
                 words.append(word)
                 word = []
