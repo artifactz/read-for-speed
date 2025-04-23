@@ -1,4 +1,4 @@
-import sys, collections, uuid, logging
+import sys, collections, uuid, logging, io, gc
 from pathlib import Path
 import PIL.Image
 import numpy as np
@@ -55,8 +55,17 @@ class CropSampler:
         page_number, rect = sample_page_rect(self.pdf, self.primary_font_raw, self.rect_size, self.k)
         page = self.pdf.pages[page_number]
         if self.page_images[page_number] is None:
-            self.page_images[page_number] = page.to_image(self.dpi).original
-        img: PIL.Image.Image = self.page_images[page_number]
+            # Rendering takes a lot of memory, so clean up
+            gc.collect()
+            img = page.to_image(self.dpi).original
+            # Cache as PNG
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format="PNG")
+            img_bytes.seek(0)
+            self.page_images[page_number] = img_bytes
+        else:
+            img = PIL.Image.open(self.page_images[page_number])
+            self.page_images[page_number].seek(0)
 
         # Convert to image coordinates
         img_rect = (

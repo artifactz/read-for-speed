@@ -1,4 +1,4 @@
-import math, re, os, tempfile, collections
+import math, re, os, tempfile, collections, subprocess, json, io
 from typing import IO
 from tqdm import tqdm
 import pdfplumber
@@ -317,6 +317,23 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, remapped_fonts
     }
 
 
+def run_font_estimation(pdf_file: IO | str):
+    """
+    Runs font detection in a new process to save memory (mostly torch import).
+    """
+    if isinstance(pdf_file, io.IOBase):
+        p = subprocess.Popen(["python", "ml/font/estimator.py", "--"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        p.stdin.write(pdf_file.read())  # XXX read all
+        pdf_file.seek(0)
+        p.stdin.close()
+    else:
+        p = subprocess.Popen(["python", "ml/font/estimator.py", pdf_file], stdout=subprocess.PIPE)
+    result = json.load(p.stdout)
+    p.stdout.close()
+    p.wait()
+    return result
+
+
 def generate_text_overlay(input_pdf_file: IO | str):
     """
     Generates a temporary overlay pdf document and returns a metadata dict containing its path.
@@ -328,14 +345,11 @@ def generate_text_overlay(input_pdf_file: IO | str):
     successful_words = 0
 
     print("Reading document.")
+    remapped_fonts = None
     with pdfplumber.open(input_pdf_file) as input_pdf:
         # Check if font names are encrypted
-        if _is_primary_font_encrypted(input_pdf):
-            print("Loading font model.")
-            import ml.font.estimator as fe
-            print("Detecting font.")
-            estimated_font_name, pdf_font_name = fe.estimate_primary_font(input_pdf)
-            remapped_fonts = {pdf_font_name: estimated_font_name}
+        if True:#_is_primary_font_encrypted(input_pdf):
+            remapped_fonts = run_font_estimation(input_pdf_file)
         else:
             remapped_fonts = {}
 
@@ -426,7 +440,8 @@ def add_text_overlay(input_pdf_path: str, output_pdf_path: str):
     Returns metadata.
     """
     with open(output_pdf_path, "wb") as output_file:
-        return add_text_overlay_file(input_pdf_path, output_file)
+        with open(input_pdf_path, "rb") as input_file:  # XXX
+            return add_text_overlay_file(input_file, output_file)
 
 
 if __name__ == "__main__":

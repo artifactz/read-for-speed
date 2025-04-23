@@ -33,6 +33,16 @@ def estimate_primary_font(pdf: pdfplumber.PDF, samples=32) -> tuple[str, str]:
 
 
 if __name__ == "__main__":
-    pdf_path = "samples/encrypted/sample31.pdf"
-    with pdfplumber.open(pdf_path) as pdf:
-        print(estimate_primary_font(pdf))
+    import sys, json
+    args = sys.argv[1:]
+    if not args:
+        pdf_file = "samples/encrypted/sample31.pdf"
+    elif args[0] == "--":
+        pdf_file = sys.stdin.buffer
+    else:
+        pdf_file = " ".join(args)
+    with open("test.pdf", "wb") as f:
+        f.write(sys.stdin.buffer.read())
+    # with pdfplumber.open(pdf_file, "rb") as pdf:
+    #     predicted, primary_font_name = estimate_primary_font(pdf)
+    #     print(json.dumps({primary_font_name: predicted}))
