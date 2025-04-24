@@ -1,14 +1,15 @@
 # Use an official Python runtime as a parent image
-FROM python:3.11-slim
+FROM python:3.13.3-slim
 
 # Set the working directory
 WORKDIR /app
 
+# Install required Python packages
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
 # Copy contents into the container
 COPY . .
-
-# Install required Python packages
-RUN pip install --no-cache-dir gunicorn flask msgpack pdfplumber pypdf2 reportlab tqdm numpy pillow torch torchvision
 
 # Expose port 8080 for Cloud Run
 EXPOSE 8080

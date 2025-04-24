@@ -1,0 +1,11 @@
+gunicorn
+flask
+msgpack
+pdfplumber
+pypdf2
+reportlab
+tqdm
+numpy
+pillow
+torch
+torchvision
