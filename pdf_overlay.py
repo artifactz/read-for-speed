@@ -402,6 +402,8 @@ def add_text_overlay_file(input_pdf_file: IO | str, output_pdf_file: IO):
 
     # Write overlay pdf file
     metadata = generate_text_overlay(input_pdf_file)
+    if hasattr(input_pdf_file, "seek"):
+        input_pdf_file.seek(0)
 
     # Merge overlay with the original pages
     writer = PdfWriter()
