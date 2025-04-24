@@ -1,4 +1,4 @@
-import math, re, os, tempfile, collections, subprocess, json, io
+import math, re, os, tempfile, collections, subprocess, gc
 from typing import IO
 from tqdm import tqdm
 import pdfplumber
@@ -404,6 +404,7 @@ def add_text_overlay_file(input_pdf_file: IO | str, output_pdf_file: IO):
     metadata = generate_text_overlay(input_pdf_file)
     if hasattr(input_pdf_file, "seek"):
         input_pdf_file.seek(0)
+    gc.collect()
 
     # Merge overlay with the original pages
     writer = PdfWriter()
