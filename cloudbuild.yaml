@@ -1,0 +1,7 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  script: |
+    docker build -t gcr.io/eye-guide/pdf-processor-service .
+  automapSubstitutions: true
+images:
+- 'gcr.io/eye-guide/pdf-processor-service'
