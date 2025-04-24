@@ -1,19 +1,21 @@
-import json
+import json, sys
+from typing import Iterable
+from pathlib import Path
 import torch
-import pdfplumber
+
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from ml.font import extract, train
 
 
 with open("ml/font/classes.json") as f:
     classes = json.load(f)
-    classes = {v: k for k, v in classes.items()}
 
-model = train.Net(len(classes))
+model = train.Net(classes)
 model.load_state_dict(torch.load("ml/font/model.pth"))
 model.eval()
 
 
-def estimate_primary_font(pdf: pdfplumber.PDF, samples=32) -> tuple[str, str]:
+def estimate_primary_font(pdf: "pdfplumber.PDF", samples=24) -> tuple[str, str]:
     """
     Estimates the primary font used in a PDF document.
     :param pdf: pdfplumber pdf object to analyze
@@ -21,18 +23,44 @@ def estimate_primary_font(pdf: pdfplumber.PDF, samples=32) -> tuple[str, str]:
     :return: tuple of (predicted font name, font name used in the document)
     """
     sampler = extract.CropSampler(pdf)
-    samples = [sampler.sample() for _ in range(samples)]
+    samples = sampler.sample_iter(samples)
+    prediction = estimate_primary_font_from_samples(samples)
+    return prediction, sampler.primary_font_raw
+
+
+def estimate_primary_font_from_samples(samples: Iterable) -> str:
+    """
+    Estimates the primary font used in a list of samples.
+    :param samples: list of PIL Image samples to analyze
+    :return: predicted font name
+    """
+    import os
+    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+    import matplotlib.pyplot as plt
     tensors = [train.img_to_tensor(img) for img in samples]
     tensors = torch.stack(tensors)
     with torch.no_grad():
         outputs = model(tensors)
         summed = outputs.sum(dim=0).cpu().numpy()
         predicted = summed.argmax()
-    predicted = classes[predicted]
-    return predicted, sampler.primary_font_raw
+    return classes[predicted]
 
 
 if __name__ == "__main__":
-    pdf_path = "samples/encrypted/sample31.pdf"
-    with pdfplumber.open(pdf_path) as pdf:
-        print(estimate_primary_font(pdf))
+    import sys
+    args = sys.argv[1:]
+    if not args:
+        pdf_file = "samples/encrypted/sample31.pdf"
+    elif args[0] == "--":
+        import pickle
+        samples = pickle.load(sys.stdin.buffer)
+        prediction = estimate_primary_font_from_samples(samples)
+        print(prediction)
+        exit(0)
+    else:
+        pdf_file = " ".join(args)
+
+    import pdfplumber, json
+    with pdfplumber.open(pdf_file) as pdf:
+        predicted, primary_font_name = estimate_primary_font(pdf)
+        print(json.dumps({primary_font_name: predicted}))

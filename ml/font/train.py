@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms as T
 from torch.utils.data import Dataset, DataLoader
+import matplotlib.pyplot as plt
 
 
 class FontsDataset(Dataset):
@@ -15,17 +16,20 @@ class FontsDataset(Dataset):
         """
         self.images = []
         self.labels = []
-        self.classes = {}
+        classes = {}
         for path, folders, files in Path(folder).walk():
             for file in files:
                 if file.endswith(".png"):
                     img = Image.open(path / file)
                     t = img_to_tensor(img)
                     self.images.append(t)
-                    label_str = path.parent.name
-                    if label_str not in self.classes:
-                        self.classes[label_str] = len(self.classes)
-                    self.labels.append(self.classes[label_str])
+                    class_name = path.parent.name
+                    if class_name not in classes:
+                        classes[class_name] = len(classes)
+                    label = classes[class_name]
+                    self.labels.append(label)
+        classes = {v: k for k, v in classes.items()}
+        self.classes = [classes[i] for i in range(len(classes))]
 
     def __len__(self):
         return len(self.images)
@@ -41,11 +45,12 @@ def img_to_tensor(img: Image.Image) -> torch.Tensor:
 
 
 class Net(nn.Module):
-    def __init__(self, num_classes: int):
+    def __init__(self, classes: list[str]):
         """
-        :param num_classes: must match the number of subfolders in the training data folder
+        :param classes: must match the number of subfolders in the training data folder
         """
         super().__init__()
+        self.classes = classes
         self.net = nn.Sequential(
             nn.Conv2d(1, 8, 5),
             nn.ReLU(),
@@ -64,14 +69,14 @@ class Net(nn.Module):
             nn.ReLU(),
             nn.Linear(341, 113),
             nn.ReLU(),
-            nn.Linear(113, num_classes),
+            nn.Linear(113, len(classes)),
         )
 
     def forward(self, x):
         return self.net(x)
 
 
-def train_model(model: nn.Module, dataloader: DataLoader, epochs: int = 10):
+def train_model(model: Net, dataloader: DataLoader, epochs: int = 10):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     model.train()
@@ -94,7 +99,7 @@ def train_model(model: nn.Module, dataloader: DataLoader, epochs: int = 10):
         print(f"Epoch {epoch+1:02d}: Loss={total_loss:.4f}, Accuracy={correct/total:.2%}")
 
 
-def eval_model(model: nn.Module, dataloader: DataLoader):
+def eval_model(model: Net, dataloader: DataLoader):
     model.eval()
     correct = 0
     total = 0
@@ -111,13 +116,52 @@ def eval_model(model: nn.Module, dataloader: DataLoader):
     }
 
 
+def test_model(model: Net, samples: list[Image.Image]):
+    tensors = [img_to_tensor(img) for img in samples]
+    tensors = torch.stack(tensors)
+    with torch.no_grad():
+        outputs = model(tensors).cpu().numpy()
+        mean = outputs.mean(axis=0)
+        predicted = mean.argmax()
+
+        plt.bar(model.classes, mean)
+        plt.xticks(rotation=33, horizontalalignment="right")
+        plt.title("Font Estimation")
+        plt.ylabel("Confidence")
+        plt.tight_layout()
+        plt.show()
+
+        plt.bar(range(outputs.shape[0]), outputs[:, predicted])
+        plt.title(f"{model.classes[predicted]} Estimation")
+        plt.xlabel("Sample")
+        plt.ylabel("Confidence")
+        plt.tight_layout()
+        plt.show()
+
+
+def run_model_test(pdf_path: str, model: Net = None, num_samples: int = 24):
+    import os, pdfplumber
+    import extract
+
+    if model is None:
+        import estimator
+        model = estimator.model
+
+    with pdfplumber.open(pdf_path) as pdf:
+        sampler = extract.CropSampler(pdf)
+        samples = list(sampler.sample_iter(num_samples))
+        # Workaround for a crash due to conflicting OpenMP instances from pytorch and matplotlib
+        os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+        test_model(model, samples)
+
+
 if __name__ == "__main__":
     dataset = FontsDataset("ml/font/training_data")
     train_dataset, eval_dataset = torch.utils.data.random_split(dataset, [0.8, 0.2])
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     eval_loader = DataLoader(eval_dataset, batch_size=32, shuffle=False)
 
-    model = Net(7)
+    model = Net(dataset.classes)
     train_model(model, train_loader, 20)
 
     torch.save(model.state_dict(), "ml/font/model.pth")
@@ -126,3 +170,5 @@ if __name__ == "__main__":
 
     eval_results = eval_model(model, eval_loader)
     print(eval_results)
+
+    run_model_test("samples/encrypted/sample31.pdf", model)

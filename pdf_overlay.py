@@ -1,11 +1,11 @@
-import math, re, os, tempfile, collections
+import math, re, os, tempfile, collections, subprocess, json, io
 from typing import IO
 from tqdm import tqdm
 import pdfplumber
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen.canvas import Canvas
 import fonts
-from ml.font.extract import count_font_characters
+from ml.font.extract import count_font_characters, CropSampler
 
 
 DEFAULT_CONFIG = {
@@ -317,6 +317,27 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, remapped_fonts
     }
 
 
+def run_font_estimation(pdf: pdfplumber.PDF, samples=16):
+    """
+    Runs estimator.py in a subprocess, such that memory allocated by torch is freed as soon as we're done.
+    Pytorch is currently only needed to estimate the primary font.
+    """
+    import pickle, time
+    t0 = time.time()
+    sampler = CropSampler(pdf)
+    samples = list(sampler.sample_iter(samples))
+    t1 = time.time()
+    p = subprocess.Popen(["python", "ml/font/estimator.py", "--"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    pickle.dump(samples, p.stdin)
+    p.stdin.close()
+    result = p.stdout.readline()
+    p.stdout.close()
+    p.wait()
+    t2 = time.time()
+    print(f"CropSampler time: {t1 - t0:.2f}s, estimator.py time: {t2 - t1:.2f}s")
+    return {sampler.primary_font_raw: result.decode("utf-8").strip()}
+
+
 def generate_text_overlay(input_pdf_file: IO | str):
     """
     Generates a temporary overlay pdf document and returns a metadata dict containing its path.
@@ -328,14 +349,11 @@ def generate_text_overlay(input_pdf_file: IO | str):
     successful_words = 0
 
     print("Reading document.")
+    remapped_fonts = None
     with pdfplumber.open(input_pdf_file) as input_pdf:
         # Check if font names are encrypted
         if _is_primary_font_encrypted(input_pdf):
-            print("Loading font model.")
-            import ml.font.estimator as fe
-            print("Detecting font.")
-            estimated_font_name, pdf_font_name = fe.estimate_primary_font(input_pdf)
-            remapped_fonts = {pdf_font_name: estimated_font_name}
+            remapped_fonts = run_font_estimation(input_pdf)
         else:
             remapped_fonts = {}
 
@@ -425,13 +443,16 @@ def add_text_overlay(input_pdf_path: str, output_pdf_path: str):
     Adds text overlay to the input PDF and saves as output PDF file.
     Returns metadata.
     """
+    # with open(input_pdf_path, "rb") as input_file:  # XXX as file object
+    #     with open(output_pdf_path, "wb") as output_file:
+    #         return add_text_overlay_file(input_file, output_file)
     with open(output_pdf_path, "wb") as output_file:
         return add_text_overlay_file(input_pdf_path, output_file)
 
 
 if __name__ == "__main__":
-    input_pdf_path = "samples/encrypted/sample71.pdf"
-    output_pdf_path = "samples/encrypted/output71.pdf"
+    input_pdf_path = "samples/encrypted/sample23.pdf"
+    output_pdf_path = "samples/encrypted/output23.pdf"
     metdata = add_text_overlay(input_pdf_path, output_pdf_path)
     print("Metadata:", metdata)
     print(f"Overlay added successfully. Saved as {output_pdf_path}")

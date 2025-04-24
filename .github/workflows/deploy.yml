@@ -33,5 +33,6 @@ jobs:
           gcloud run deploy pdf-processor-service \
             --image "${DOCKER_TAG}" \
             --platform managed \
+            --memory 1Gi \
             --region europe-west10 \
             --allow-unauthenticated
