@@ -1,4 +1,5 @@
 import sys, collections, uuid, logging, io, gc
+from typing import Generator
 from pathlib import Path
 import PIL.Image
 import numpy as np
@@ -23,14 +24,16 @@ def generate_training_data(pdf_paths: list, output_folder: str, num_samples_per_
             sampler = CropSampler(pdf)
             folder = Path(output_folder) / Path(sampler.primary_font) / pdf_path.stem
             folder.mkdir(parents=True, exist_ok=True)
-            for _ in tqdm(range(num_samples_per_document), desc=f"Processing {pdf_path.stem}", unit="sample"):
-                img = sampler.sample()
+            for img in tqdm(
+                sampler.sample_iter(num_samples_per_document),
+                desc=f"Processing {pdf_path.stem}", total=num_samples_per_document, unit="sample"
+            ):
                 filename = f"{uuid.uuid4()}.png"
                 img.save(folder / filename)
 
 
 class CropSampler:
-    """Samples random crops from a PDF document as PIL images. Caches rendered pages."""
+    """Samples random crops from a PDF document as PIL images."""
     def __init__(self, pdf: pdfplumber.PDF, crop_size: int = 128, rect_size: float = 64, k: int = 30, dpi: float = 600):
         """
         Initializes the CropSampler with a PDF document and parameters for sampling.
@@ -46,41 +49,41 @@ class CropSampler:
         self.rect_size = rect_size
         self.dpi = dpi
         self.k = k
-        self.page_images = [None] * len(pdf.pages)
         self.primary_font_raw = count_font_characters(pdf).most_common(1)[0][0]
         self.primary_font = fonts._disambiguate_identifier(self.primary_font_raw)
 
-    def sample(self) -> PIL.Image.Image:
-        """Samples a random crop from the PDF document."""
-        page_number, rect = sample_page_rect(self.pdf, self.primary_font_raw, self.rect_size, self.k)
-        page = self.pdf.pages[page_number]
-        if self.page_images[page_number] is None:
-            # Rendering takes a lot of memory, so clean up
-            gc.collect()
-            img = page.to_image(self.dpi).original
-            # Cache as PNG
-            img_bytes = io.BytesIO()
-            img.save(img_bytes, format="PNG")
-            img_bytes.seek(0)
-            self.page_images[page_number] = img_bytes
-        else:
-            img = PIL.Image.open(self.page_images[page_number])
-            self.page_images[page_number].seek(0)
+    def sample_iter(self, n: int) -> Generator[PIL.Image.Image]:
+        """Samples a batch of random crops, minimizing the number of page renders."""
+        page_rects = sorted(sample_page_rect(self.pdf, self.primary_font_raw, self.rect_size, self.k) for _ in range(n))
+        img_page = None
+        for page_number, rect in page_rects:
+            if page_number != img_page:
+                # Rendering takes a lot of memory, so clean up
+                gc.collect()
+                page = self.pdf.pages[page_number]
+                img = page.to_image(self.dpi).original
+                img_page = page_number
+            img_rect = self._convert_rect(rect, (page.width, page.height), (img.width, img.height))
+            yield self._crop(img_rect, img)
 
-        # Convert to image coordinates
-        img_rect = (
-            rect[0] / page.width * img.width,
-            (1 - (rect[3] / page.height)) * img.height,
-            rect[2] / page.width * img.width,
-            (1 - (rect[1] / page.height)) * img.height,
+    @staticmethod
+    def _convert_rect(rect: tuple, page_size: tuple, image_size: tuple) -> tuple:
+        """Converts PDF rectangle coordinates to image coordinates."""
+        return (
+            rect[0] / page_size[0] * image_size[0],
+            (1 - (rect[3] / page_size[1])) * image_size[1],
+            rect[2] / page_size[0] * image_size[0],
+            (1 - (rect[1] / page_size[1])) * image_size[1],
         )
+
+    def _crop(self, img_rect: tuple, image: PIL.Image.Image):
+        """Generates a grayscale crop."""
         # Crop the image
-        img_cropped = img.crop(img_rect)
+        img_cropped = image.crop(img_rect)
         # Convert to grayscale
         img_cropped = img_cropped.convert("L")
         # Resize to crop size
         img_cropped = img_cropped.resize((self.crop_size, self.crop_size))
-
         return img_cropped
 
 
@@ -149,7 +152,7 @@ def show_crops(pdf_path, n: int, *args, **kwargs):
     import cv2
     with pdfplumber.open(pdf_path) as pdf:
         sampler = CropSampler(pdf, *args, **kwargs)
-        crops = [sampler.sample() for _ in range(n)]
+        crops = list(sampler.sample_iter(n))
         tabularized = tabularize_crops([np.array(c) for c in crops])
         cv2.imshow(sampler.primary_font, tabularized)
         cv2.waitKey(0)
@@ -224,6 +227,8 @@ if __name__ == "__main__":
     #         # Verdana
     #         "samples/sample10.pdf",
     #         "samples/sample9.pdf",
+    #         "samples/synthetic/Verdana01_Volkshochschulen.pdf",
+    #         "samples/synthetic/Verdana02_Terraria.pdf",
 
     #         # Helvetica
     #         "samples/sample2.pdf",

@@ -5,7 +5,7 @@ import pdfplumber
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen.canvas import Canvas
 import fonts
-from ml.font.extract import count_font_characters
+from ml.font.extract import count_font_characters, CropSampler
 
 
 DEFAULT_CONFIG = {
@@ -317,21 +317,25 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, remapped_fonts
     }
 
 
-def run_font_estimation(pdf_file: IO | str):
+def run_font_estimation(pdf: pdfplumber.PDF, samples=16):
     """
-    Runs font detection in a new process to save memory (mostly torch import).
+    Runs estimator.py in a subprocess, such that memory allocated by torch is freed as soon as we're done.
+    Pytorch is currently only needed to estimate the primary font.
     """
-    if isinstance(pdf_file, io.IOBase):
-        p = subprocess.Popen(["python", "ml/font/estimator.py", "--"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-        p.stdin.write(pdf_file.read())  # XXX read all
-        pdf_file.seek(0)
-        p.stdin.close()
-    else:
-        p = subprocess.Popen(["python", "ml/font/estimator.py", pdf_file], stdout=subprocess.PIPE)
-    result = json.load(p.stdout)
+    import pickle, time
+    t0 = time.time()
+    sampler = CropSampler(pdf)
+    samples = list(sampler.sample_iter(samples))
+    t1 = time.time()
+    p = subprocess.Popen(["python", "ml/font/estimator.py", "--"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    pickle.dump(samples, p.stdin)
+    p.stdin.close()
+    result = p.stdout.readline()
     p.stdout.close()
     p.wait()
-    return result
+    t2 = time.time()
+    print(f"CropSampler time: {t1 - t0:.2f}s, estimator.py time: {t2 - t1:.2f}s")
+    return {sampler.primary_font_raw: result.decode("utf-8").strip()}
 
 
 def generate_text_overlay(input_pdf_file: IO | str):
@@ -348,8 +352,8 @@ def generate_text_overlay(input_pdf_file: IO | str):
     remapped_fonts = None
     with pdfplumber.open(input_pdf_file) as input_pdf:
         # Check if font names are encrypted
-        if True:#_is_primary_font_encrypted(input_pdf):
-            remapped_fonts = run_font_estimation(input_pdf_file)
+        if _is_primary_font_encrypted(input_pdf):
+            remapped_fonts = run_font_estimation(input_pdf)
         else:
             remapped_fonts = {}
 
@@ -439,14 +443,16 @@ def add_text_overlay(input_pdf_path: str, output_pdf_path: str):
     Adds text overlay to the input PDF and saves as output PDF file.
     Returns metadata.
     """
+    # with open(input_pdf_path, "rb") as input_file:  # XXX as file object
+    #     with open(output_pdf_path, "wb") as output_file:
+    #         return add_text_overlay_file(input_file, output_file)
     with open(output_pdf_path, "wb") as output_file:
-        with open(input_pdf_path, "rb") as input_file:  # XXX
-            return add_text_overlay_file(input_file, output_file)
+        return add_text_overlay_file(input_pdf_path, output_file)
 
 
 if __name__ == "__main__":
-    input_pdf_path = "samples/encrypted/sample71.pdf"
-    output_pdf_path = "samples/encrypted/output71.pdf"
+    input_pdf_path = "samples/encrypted/sample23.pdf"
+    output_pdf_path = "samples/encrypted/output23.pdf"
     metdata = add_text_overlay(input_pdf_path, output_pdf_path)
     print("Metadata:", metdata)
     print(f"Overlay added successfully. Saved as {output_pdf_path}")
