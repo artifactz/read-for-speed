@@ -34,9 +34,6 @@ def estimate_primary_font_from_samples(samples: Iterable) -> str:
     :param samples: list of PIL Image samples to analyze
     :return: predicted font name
     """
-    import os
-    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-    import matplotlib.pyplot as plt
     tensors = [train.img_to_tensor(img) for img in samples]
     tensors = torch.stack(tensors)
     with torch.no_grad():

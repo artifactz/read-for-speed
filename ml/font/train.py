@@ -6,7 +6,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms as T
 from torch.utils.data import Dataset, DataLoader
-import matplotlib.pyplot as plt
 
 
 class FontsDataset(Dataset):
@@ -117,6 +116,7 @@ def eval_model(model: Net, dataloader: DataLoader):
 
 
 def test_model(model: Net, samples: list[Image.Image]):
+    import matplotlib.pyplot as plt
     tensors = [img_to_tensor(img) for img in samples]
     tensors = torch.stack(tensors)
     with torch.no_grad():
