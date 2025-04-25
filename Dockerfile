@@ -14,5 +14,5 @@ COPY . .
 # Expose port 8080 for Cloud Run
 EXPOSE 8080
 
-# Start the Flask app using Gunicorn for better performance
-CMD ["gunicorn", "-b", "0.0.0.0:8080", "main:app", "--timeout 240"]
+# Start the Flask app
+CMD ["python", "main.py"]
