@@ -379,9 +379,8 @@ def generate_text_overlay(input_pdf_file: IO | str):
 
     success_ratio = successful_words / total_words if total_words > 0 else 0
     has_encrypted_fonts = any(_is_encrypted_font(f) for f in missing_fonts)
-    summary = "warning" if success_ratio < 0.5 or has_encrypted_fonts else "ok"
-
     font_estimation = {"estimated_primary_font": list(remapped_fonts.values())[0]} if remapped_fonts else {}
+    summary = "warning" if success_ratio < 0.5 else "ok"
 
     return {
         "path": overlay_pdf.name,
