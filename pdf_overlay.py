@@ -1,4 +1,4 @@
-import math, re, os, tempfile, collections, subprocess, gc
+import math, re, os, tempfile, collections, subprocess, gc, logging
 from typing import IO
 from tqdm import tqdm
 import pdfplumber
@@ -399,31 +399,40 @@ def add_text_overlay_file(input_pdf_file: IO | str, output_pdf_file: IO):
     Returns metadata.
     """
 
+    from util.memory_usage import get_memory_usage_mb
+    logging.info(f"Memory usage before overlay generation: {get_memory_usage_mb()}")
+
     # Write overlay pdf file
     metadata = generate_text_overlay(input_pdf_file)
     if hasattr(input_pdf_file, "seek"):
         input_pdf_file.seek(0)
+    logging.info(f"Memory usage after overlay generation: {get_memory_usage_mb()}")
     gc.collect()
+    logging.info(f"Memory usage after gc.collect(): {get_memory_usage_mb()}")
 
     # Merge overlay with the original pages
     writer = PdfWriter()
     reader = PdfReader(input_pdf_file)
     with open(metadata["path"], "rb") as overlay_file:
         overlay_reader = PdfReader(overlay_file)
-        for page_number, page in enumerate(tqdm(reader.pages, "Merging overlay with original pages")):
+        # for page_number, page in enumerate(tqdm(reader.pages, "Merging overlay with original pages")):
+        for page_number, page in enumerate(reader.pages):
             overlay_page = overlay_reader.pages[page_number]
             page.merge_page(overlay_page)
             writer.add_page(page)
+            logging.info(f"Memory usage after merging page {page_number}: {get_memory_usage_mb()}")
 
     _copy_metadata(reader, writer)
 
     # Save the output PDF
-    print("Saving output document.")
+    logging.info("Saving output document.")
     writer.write(output_pdf_file)
 
     # Clean up temporary overlay file
     os.remove(metadata["path"])
     del metadata["path"]
+
+    logging.info(f"Memory usage after saving output document: {get_memory_usage_mb()}")
 
     return metadata
 
