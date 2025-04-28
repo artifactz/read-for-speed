@@ -49,7 +49,7 @@ class CropSampler:
         self.rect_size = rect_size
         self.dpi = dpi
         self.k = k
-        self.primary_font_raw = count_font_characters(pdf).most_common(1)[0][0]
+        self.primary_font_raw = get_primary_font(pdf)
         self.primary_font = fonts._disambiguate_identifier(self.primary_font_raw)
 
     def sample_iter(self, n: int) -> Generator[PIL.Image.Image]:
@@ -85,6 +85,14 @@ class CropSampler:
         # Resize to crop size
         img_cropped = img_cropped.resize((self.crop_size, self.crop_size))
         return img_cropped
+
+
+def get_primary_font(pdf: pdfplumber.PDF) -> str:
+    """Returns the most used font in a PDF document."""
+    font_counts = count_font_characters(pdf)
+    if not font_counts:
+        return None
+    return font_counts.most_common(1)[0][0]
 
 
 def count_font_characters(pdf: pdfplumber.PDF) -> collections.Counter:

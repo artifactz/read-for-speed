@@ -5,7 +5,7 @@ import pdfplumber
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen.canvas import Canvas
 import fonts
-from ml.font.extract import count_font_characters, CropSampler
+from ml.font.extract import get_primary_font, CropSampler
 
 
 DEFAULT_CONFIG = {
@@ -47,7 +47,9 @@ CHAR_MAP = {
 
 
 def _is_primary_font_encrypted(pdf: pdfplumber.PDF) -> bool:
-    primary_font = count_font_characters(pdf).most_common(1)[0][0]
+    primary_font = get_primary_font(pdf)
+    if not primary_font:
+        return False
     return _is_encrypted_font(primary_font)
 
 
