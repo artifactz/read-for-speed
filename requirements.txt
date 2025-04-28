@@ -1,12 +1,13 @@
-gunicorn
 flask
+google-cloud-logging
+gunicorn
 msgpack
+numpy
+pillow
 pdfplumber
+psutil
 pypdf2
 reportlab
 tqdm
-numpy
-pillow
 torch
 torchvision
-psutil

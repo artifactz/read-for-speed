@@ -5,6 +5,7 @@ Google Cloud Run script.
 import io
 from flask import Flask, request, Response
 import msgpack
+import google.cloud.logging
 from pdf_overlay import add_text_overlay_file
 
 
@@ -13,6 +14,10 @@ app = Flask(__name__)
 @app.route("/overlay", methods=["POST"])
 def overlay():
     """Receives a PDF, overlays it, and returns the modified PDF."""
+    # Initialize Google Cloud Logging
+    client = google.cloud.logging.Client()
+    client.setup_logging()
+
     if "file" not in request.files:
         return {"error": "No file uploaded"}, 400
 
