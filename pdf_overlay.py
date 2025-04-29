@@ -6,6 +6,7 @@ from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen.canvas import Canvas
 import fonts
 from ml.font.extract import get_primary_font, CropSampler
+from util.memory_usage import get_memory_usage_mb
 
 
 DEFAULT_CONFIG = {
@@ -336,13 +337,13 @@ def run_font_estimation(pdf: pdfplumber.PDF, samples=16):
     p.stdout.close()
     p.wait()
     t2 = time.time()
-    print(f"CropSampler time: {t1 - t0:.2f}s, estimator.py time: {t2 - t1:.2f}s")
+    logging.info(f"CropSampler time: {t1 - t0:.2f}s, estimator.py time: {t2 - t1:.2f}s")
     return {sampler.primary_font_raw: result.decode("utf-8").strip()}
 
 
 def generate_text_overlay(input_pdf_file: IO | str):
     """
-    Generates a temporary overlay pdf document and returns a metadata dict containing its path.
+    Creates a temporary overlay pdf file and returns a metadata dict containing its path.
     """
 
     font_names = set()
@@ -350,12 +351,14 @@ def generate_text_overlay(input_pdf_file: IO | str):
     total_words = 0
     successful_words = 0
 
-    print("Reading document.")
+    logging.info("Reading document.")
     remapped_fonts = None
     with pdfplumber.open(input_pdf_file) as input_pdf:
         # Check if font names are encrypted
         if _is_primary_font_encrypted(input_pdf):
+            logging.info(f"Memory usage before font estimation: {get_memory_usage_mb()}")
             remapped_fonts = run_font_estimation(input_pdf)
+            logging.info(f"Memory usage after font estimation: {get_memory_usage_mb()}")
         else:
             remapped_fonts = {}
 
@@ -367,7 +370,7 @@ def generate_text_overlay(input_pdf_file: IO | str):
         with tempfile.NamedTemporaryFile(delete=False, suffix="_overlay.pdf") as overlay_pdf:
             canvas = Canvas(overlay_pdf, pagesize=median_page_size)
 
-            for page in tqdm(input_pdf.pages, "Generating overlay pages"):
+            for page in tqdm(input_pdf.pages, "Generating overlay pages", file=sys.stderr):
                 page_result = _draw_page_overlay(canvas, page, remapped_fonts)
                 canvas.showPage()  # new page
                 font_names |= page_result["font_names"]
@@ -376,8 +379,8 @@ def generate_text_overlay(input_pdf_file: IO | str):
                 successful_words += page_result["successful_words"]
             canvas.save()
 
-    print("Document fonts:", font_names)
-    print("Missing fonts:", missing_fonts)
+    logging.info(f"Document fonts: {font_names}")
+    logging.info(f"Missing fonts: {missing_fonts}")
 
     success_ratio = successful_words / total_words if total_words > 0 else 0
     has_encrypted_fonts = any(_is_encrypted_font(f) for f in missing_fonts)
@@ -395,77 +398,15 @@ def generate_text_overlay(input_pdf_file: IO | str):
     }
 
 
-def add_text_overlay_file(input_pdf_file: IO | str, output_pdf_file: IO):
-    """
-    Adds text overlay to the input PDF and writes the output PDF to a file object.
-    Returns metadata.
-    """
-
-    from util.memory_usage import get_memory_usage_mb
-    logging.info(f"Memory usage before overlay generation: {get_memory_usage_mb()}")
-
-    # Write overlay pdf file
-    metadata = generate_text_overlay(input_pdf_file)
-    if hasattr(input_pdf_file, "seek"):
-        input_pdf_file.seek(0)
-    logging.info(f"Memory usage after overlay generation: {get_memory_usage_mb()}")
-    gc.collect()
-    logging.info(f"Memory usage after gc.collect(): {get_memory_usage_mb()}")
-
-    # Merge overlay with the original pages
-    writer = PdfWriter()
-    reader = PdfReader(input_pdf_file)
-    with open(metadata["path"], "rb") as overlay_file:
-        overlay_reader = PdfReader(overlay_file)
-        # for page_number, page in enumerate(tqdm(reader.pages, "Merging overlay with original pages")):
-        for page_number, page in enumerate(reader.pages):
-            overlay_page = overlay_reader.pages[page_number]
-            page.merge_page(overlay_page)
-            writer.add_page(page)
-            logging.info(f"Memory usage after merging page {page_number}: {get_memory_usage_mb()}")
-
-    _copy_metadata(reader, writer)
-
-    # Save the output PDF
-    logging.info("Saving output document.")
-    writer.write(output_pdf_file)
-
-    # Clean up temporary overlay file
-    os.remove(metadata["path"])
-    del metadata["path"]
-
-    logging.info(f"Memory usage after saving output document: {get_memory_usage_mb()}")
-
-    return metadata
-
-
-def _copy_metadata(reader: PdfReader, writer: PdfWriter):
-    """
-    Copies metadata. Skips non-string values to avoid PyPDF2 TypeError.
-    (Reader.metadata may contain non-string values, such as list, but then writer crashes during `write`.)
-    """
-    meta = {}
-    for k in reader.metadata:  # cannot iterate over items() because their values are IndirectObject instead of str
-        if isinstance(value := reader.metadata[k], str):
-            meta[k] = value
-    writer.add_metadata(meta)
-
-
-def add_text_overlay(input_pdf_path: str, output_pdf_path: str):
-    """
-    Adds text overlay to the input PDF and saves as output PDF file.
-    Returns metadata.
-    """
-    # with open(input_pdf_path, "rb") as input_file:  # XXX as file object
-    #     with open(output_pdf_path, "wb") as output_file:
-    #         return add_text_overlay_file(input_file, output_file)
-    with open(output_pdf_path, "wb") as output_file:
-        return add_text_overlay_file(input_pdf_path, output_file)
-
-
 if __name__ == "__main__":
-    input_pdf_path = "samples/encrypted/sample23.pdf"
-    output_pdf_path = "samples/encrypted/output23.pdf"
-    metdata = add_text_overlay(input_pdf_path, output_pdf_path)
-    print("Metadata:", metdata)
-    print(f"Overlay added successfully. Saved as {output_pdf_path}")
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    import sys, json
+    args = sys.argv[1:]
+
+    if not len(args) == 1:
+        print(f"Usage: {sys.argv[0]} <input_pdf_file>")
+        sys.exit(1)
+
+    metadata = generate_text_overlay(args[0])
+    json.dump(metadata, sys.stdout, indent=2)
