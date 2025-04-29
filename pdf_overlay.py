@@ -329,6 +329,7 @@ def run_font_estimation(pdf: pdfplumber.PDF, samples=16):
     t0 = time.time()
     sampler = CropSampler(pdf)
     samples = list(sampler.sample_iter(samples))
+    logging.info(f"Memory usage after rendering samples: {get_memory_usage_mb()}")
     t1 = time.time()
     p = subprocess.Popen(["python", "ml/font/estimator.py", "--"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     pickle.dump(samples, p.stdin)
@@ -370,13 +371,15 @@ def generate_text_overlay(input_pdf_file: IO | str):
         with tempfile.NamedTemporaryFile(delete=False, suffix="_overlay.pdf") as overlay_pdf:
             canvas = Canvas(overlay_pdf, pagesize=median_page_size)
 
-            for page in tqdm(input_pdf.pages, "Generating overlay pages", file=sys.stderr):
+            # for page in tqdm(input_pdf.pages, "Generating overlay pages", file=sys.stderr):
+            for page_number, page in enumerate(input_pdf.pages):
                 page_result = _draw_page_overlay(canvas, page, remapped_fonts)
                 canvas.showPage()  # new page
                 font_names |= page_result["font_names"]
                 missing_fonts |= page_result["missing_fonts"]
                 total_words += page_result["total_words"]
                 successful_words += page_result["successful_words"]
+                logging.info(f"Memory usage after generating page {page_number}: {get_memory_usage_mb()}")
             canvas.save()
 
     logging.info(f"Document fonts: {font_names}")
