@@ -1,7 +1,6 @@
 import uuid, contextlib
 from pathlib import Path
-from PIL import Image, ExifTags
-import piexif
+from PIL import Image
 
 
 class _TileImageWriter:
