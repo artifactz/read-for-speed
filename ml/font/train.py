@@ -121,23 +121,6 @@ def train_model(model: Net, dataloader: DataLoader, epochs: int = 10, device=Non
         print(f"Epoch {epoch+1:02d}: Loss={total_loss:.4f}, Accuracy={correct/total:.2%}")
 
 
-def eval_model(model: Net, dataloader: DataLoader):
-    model.eval()
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for x, y in dataloader:
-            output = model(x)
-            preds = output.argmax(dim=1)
-            correct += (preds == y).sum().item()
-            total += y.size(0)
-    return {
-        "accuracy": correct / total,
-        "total": total,
-        "correct": correct,
-    }
-
-
 def test_model(model: Net, samples: list[Image.Image]):
     import matplotlib.pyplot as plt
     tensors = [img_to_tensor(img) for img in samples]
@@ -191,8 +174,5 @@ if __name__ == "__main__":
     torch.save(model.state_dict(), "ml/font/model.pth")
     with open("ml/font/classes.json", "w") as f:
         json.dump(dataset.classes, f)
-
-    # eval_results = eval_model(model, eval_loader)
-    # print(eval_results)
 
     # run_model_test("samples/encrypted/sample31.pdf")
