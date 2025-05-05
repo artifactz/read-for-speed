@@ -84,7 +84,7 @@ def _split_emphasized_part(word_chars):
     return word_chars[:end], word_chars[end:]
 
 
-def group_words(chars, offset_threshold=1.0, non_word_chars=""" ,.!?;:/()[]{}<>§$%&_'"„“‚‘«»→—=""") -> list[list[dict]]:
+def group_words(chars, offset_threshold=1.0, non_word_chars=""" \t,.!?;:/()[]{}<>§$%&_'"„“‚‘«»→—=""") -> list[list[dict]]:
     """
     Groups characters into words based on their positions and font properties.
 

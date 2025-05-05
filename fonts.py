@@ -21,8 +21,11 @@ FONT_MAP = {
     "CMBX": "ComputerModernSerif-Bold",
     "DGMetaSerifScience": "DeGruyterSerif",
     "DGMetaScience": "DeGruyterSans",
+    "LMRoman10": "ComputerModernSerif",
     "NimbusSanL": "NimbusSans",
+    "STIX": "STIXTwoText",
     "STIXGeneral": "STIXTwoText",
+    "TeXGyreTermesX": "NimbusRomNo9L",
     "Times": "TimesNewRoman",
     "TimesNewer": "TimesNewerRoman",
     "URWPalladioL": "P052",
@@ -87,9 +90,8 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extra
             identifier = _bolden(identifier)
         except FontIsExtraboldException:
             return {"state": "too_bold"}
-
-    if not use_extrabold and "Extrabold" in identifier:
-        return {"state": "too_bold"}
+        if not use_extrabold and "Extrabold" in identifier:
+            return {"state": "too_bold"}
 
     identifier = _handle_helvetica(identifier)
 
@@ -206,7 +208,7 @@ def _disambiguate_modifiers(pdf_modifiers: str):
         weight = "Extrabold"
     elif "bold" in pdf_modifiers:
         weight = "Bold"
-    if "ital" in pdf_modifiers or "oblique" in pdf_modifiers or "slant" in pdf_modifiers:
+    if "it" in pdf_modifiers or "oblique" in pdf_modifiers or "slant" in pdf_modifiers:
         italic = "Italic"
     if "semicondensed" in pdf_modifiers:
         condensed = "SemiCondensed"
