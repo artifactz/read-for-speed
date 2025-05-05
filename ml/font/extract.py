@@ -1,5 +1,5 @@
-import sys, collections, uuid, logging, io, gc
-from typing import Generator
+import sys, collections, logging, io, gc, multiprocessing.pool, contextlib, random, shutil
+from typing import Generator, Iterable
 from pathlib import Path
 import PIL.Image
 import numpy as np
@@ -7,10 +7,79 @@ from tqdm import tqdm
 import pdfplumber, pdfplumber.page
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
-import fonts
+import fonts, util.io, util.tile_image
 
 
-def generate_training_data(pdf_paths: list, output_folder: str, num_samples_per_document: int = 100):
+def index_primary_fonts(folder, index_file):
+    """Stores the primary font of each PDF file in the given txt file."""
+    primary_fonts = {}
+    with contextlib.suppress(OSError):
+        with open(index_file) as f:
+            for line in f.readlines():
+                k, v = line.split(":")
+                primary_fonts[k] = v.strip()
+
+    logging.getLogger('pdfminer.pdfpage').setLevel(logging.ERROR)
+    paths = list(Path(folder).glob("*.pdf"))
+    for path in tqdm(paths, file=sys.stderr):
+        if path.name in primary_fonts:
+            continue
+
+        try:
+            with pdfplumber.open(path) as pdf:
+                primary_font = get_primary_font(pdf)
+        except Exception as e:
+            print(f"Error reading file {path.name}: {e}")
+            primary_font = None
+        if primary_font:
+            primary_font = fonts._disambiguate_identifier(primary_font)
+
+        with open(index_file, "a") as f:
+            f.write(f"{path.name}: {primary_font}\n")
+
+
+def generate_training_data_from_primary_fonts(
+    primary_fonts_path: str | Path | Iterable[str | Path],
+    output_folder: str,
+    total_samples: int,
+    enable_skip=True,
+    classes=["ComputerModernSerif", "TimesNewRoman", "NimbusRomNo9L", "P052", "LinLibertine", "MinionPro", "Arial", "Calibri", "Helvetica", "AGaramond", "Calisto"]
+):
+    """
+    Generates training data by sampling random crops from PDF documents and saving them as images. Balances the number
+    of samples per document to ensure a similar number of samples for each font class.
+
+    :param primary_fonts_path: Path or list of paths to primary_fonts.txt files, which contain paths to PDF documents
+                               and their primary font names
+    :param output_folder: Folder to save the generated images (creates font_name/document_name subfolders)
+    :param total_samples: Total number of samples to generate
+    :param enable_skip: If True, skips documents that have already been processed
+    :param classes: List of font classes to include in the training data
+    """
+    logging.getLogger('pdfminer.pdfpage').setLevel(logging.ERROR)
+    path_fonts = []
+    num_documents = collections.Counter()
+
+    for path, font in util.io.load_file_values(primary_fonts_path):
+        if font in classes:
+            path_fonts.append((path, font))
+            num_documents[font] += 1
+
+    num_samples_per_class = total_samples / len(classes)
+    class_num_samples = {k: round(num_samples_per_class / v) for k, v in num_documents.items()}
+    args = [(path, output_folder, class_num_samples[font], enable_skip, False) for path, font in path_fonts]
+    random.shuffle(args)
+
+    pool = multiprocessing.pool.Pool(16, initializer=_silence_pdfminer)
+    for _ in tqdm(pool.imap_unordered(_generate_training_data_star, args), total=len(path_fonts)):
+        pass
+    pool.close()
+    pool.join()
+    # for arg in args:  # for debugging: without multiprocessing
+    #     generate_training_data(*arg)
+
+
+def generate_training_data_from_list(pdf_paths: list, output_folder: str, num_samples_per_document: int = 100):
     """
     Generates training data by sampling random crops from PDF documents and saving them as images.
 
@@ -19,17 +88,41 @@ def generate_training_data(pdf_paths: list, output_folder: str, num_samples_per_
     """
     logging.getLogger('pdfminer.pdfpage').setLevel(logging.ERROR)
     for pdf_path in pdf_paths:
-        pdf_path = Path(pdf_path)
+        generate_training_data(pdf_path, output_folder, num_samples_per_document)
+
+
+def _generate_training_data_star(args):
+    generate_training_data(*args)
+
+
+def generate_training_data(
+    pdf_path: str, output_folder: str | Path, num_samples: int = 100, enable_skip=True, verbose=True
+):
+    """
+    Generates training data by sampling random crops from PDF documents and saving them as PNG images.
+
+    :param pdf_path: Path to PDF document
+    :param output_folder: Folder to save the generated images (creates font_name/document_name subfolders)
+    :param num_samples: Number of crops to generate
+    """
+    pdf_path = Path(pdf_path)
+    output_folder = Path(output_folder)
+    if enable_skip and any((p / pdf_path.stem).exists() for p in output_folder.iterdir() if p.is_dir()):
+        return
+    try:
         with pdfplumber.open(pdf_path) as pdf:
             sampler = CropSampler(pdf)
-            folder = Path(output_folder) / Path(sampler.primary_font) / pdf_path.stem
+            folder = output_folder / sampler.primary_font / pdf_path.stem
             folder.mkdir(parents=True, exist_ok=True)
-            for img in tqdm(
-                sampler.sample_iter(num_samples_per_document),
-                desc=f"Processing {pdf_path.stem}", total=num_samples_per_document, unit="sample"
-            ):
-                filename = f"{uuid.uuid4()}.png"
-                img.save(folder / filename)
+            sample_gen = sampler.sample_iter(num_samples)
+            if verbose:
+                sample_gen = tqdm(sample_gen, desc=f"Processing {pdf_path.stem}", total=num_samples, unit="sample")
+            with util.tile_image.tile_image_writer(folder) as writer:
+                for img in sample_gen:
+                    writer.write(img)
+
+    except OSError as e:
+        print(f"Error reading file {pdf_path.name}: {e}")
 
 
 class CropSampler:
@@ -78,13 +171,23 @@ class CropSampler:
 
     def _crop(self, img_rect: tuple, image: PIL.Image.Image):
         """Generates a grayscale crop."""
-        # Crop the image
-        img_cropped = image.crop(img_rect)
-        # Convert to grayscale
-        img_cropped = img_cropped.convert("L")
-        # Resize to crop size
-        img_cropped = img_cropped.resize((self.crop_size, self.crop_size))
-        return img_cropped
+        image = image.crop(img_rect)
+        image = image.convert("L")
+        image = image.resize((self.crop_size, self.crop_size))
+        image = self._preprocess(image)
+        return image
+
+    @staticmethod
+    def _preprocess(image: PIL.Image.Image, invert_threshold=127) -> PIL.Image.Image:
+        """Stretches colorspace to 0..255 and inverts the image if it's too dark."""
+        arr = np.array(image)
+        mini, maxi = float(arr.min()), float(arr.max())
+        color_range = maxi - mini
+        if not (color_range == 0 or (maxi == 255 and mini == 0)):
+            image = PIL.Image.eval(image, lambda x: round((x - mini) / color_range * 255))
+        if np.mean(arr) < invert_threshold:
+            image = PIL.Image.eval(image, lambda x: 255 - x)
+        return image
 
 
 def get_primary_font(pdf: pdfplumber.PDF) -> str:
@@ -103,21 +206,6 @@ def count_font_characters(pdf: pdfplumber.PDF) -> collections.Counter:
             font = char["fontname"]
             result[font] += 1
     return result
-
-
-def get_chars_in_rect(page: pdfplumber.page.Page, rect: tuple) -> list[dict]:
-    """
-    Returns all characters that overlap with a given rectangle on a page.
-
-    :param page: pdfplumber page object
-    :param rect: tuple of (x0, y0, x1, y1) coordinates defining the rectangle
-    """
-    x0, y0, x1, y1 = rect
-    chars_in_rect = [
-        char for char in page.chars
-        if char["x1"] > x0 and char["x0"] < x1 and char["y1"] > y0 and char["y0"] < y1
-    ]
-    return chars_in_rect
 
 
 def sample_page_rect(pdf: pdfplumber.PDF, preferred_font: str, size: float, k: int) -> tuple[int, tuple]:
@@ -155,6 +243,40 @@ def sample_page_rect(pdf: pdfplumber.PDF, preferred_font: str, size: float, k: i
     return page_numbers[best_index], rects[best_index]
 
 
+def get_chars_in_rect(page: pdfplumber.page.Page, rect: tuple) -> list[dict]:
+    """
+    Returns all characters that overlap with a given rectangle on a page.
+
+    :param page: pdfplumber page object
+    :param rect: tuple of (x0, y0, x1, y1) coordinates defining the rectangle
+    """
+    x0, y0, x1, y1 = rect
+    chars_in_rect = [
+        char for char in page.chars
+        if char["x1"] > x0 and char["x0"] < x1 and char["y1"] > y0 and char["y0"] < y1
+    ]
+    return chars_in_rect
+
+
+def split_train_eval(training_folder: str | Path, evaluation_folder: str | Path, split_ratio: float = 0.85):
+    """
+    Splits the training data into training and evaluation sets by moving files from the training folder to the
+    evaluation folder.
+
+    :param training_folder: Folder containing the training data
+    :param evaluation_folder: Folder to save the evaluation data
+    :param split_ratio: Ratio of training data
+    """
+    training_folder = Path(training_folder)
+    evaluation_folder = Path(evaluation_folder)
+    for font_folder in training_folder.iterdir():
+        doc_folders = list(font_folder.iterdir())
+        num_move = round(len(doc_folders) * (1 - split_ratio))
+        for path in random.sample(doc_folders, num_move):
+            new_path = evaluation_folder / path.relative_to(training_folder)
+            shutil.move(path, new_path)
+
+
 def show_crops(pdf_path, n: int, *args, **kwargs):
     """Generates random crops from a PDF document and displays them in a grid."""
     import cv2
@@ -180,71 +302,20 @@ def tabularize_crops(crops: list[np.ndarray]) -> np.ndarray:
     return tabularized
 
 
-def print_primary_fonts(folder):
-    """Prints the primary font of each PDF file in the given folder."""
+def _silence_pdfminer():
     logging.getLogger('pdfminer.pdfpage').setLevel(logging.ERROR)
-    for path in Path(folder).glob("sample*.pdf"):
-        with pdfplumber.open(path) as pdf:
-            font_counts = count_font_characters(pdf)
-            if not font_counts:
-                print(f"{path.name}: No fonts found")
-                continue
-            primary_font = fonts._disambiguate_identifier(font_counts.most_common(1)[0][0])
-            print(f"{path.name}: {primary_font}")
 
 
 if __name__ == "__main__":
-    # print_primary_fonts("samples")
-    show_crops("samples/sample8.pdf", 12)
+    # show_crops("samples/sample8.pdf", 12)
+    # index_primary_fonts("samples/arxiv", "samples/arxiv/primary_fonts.txt")
+    # index_primary_fonts("samples/scholar", "samples/scholar/primary_fonts.txt")
+    generate_training_data_from_primary_fonts([
+        "samples/primary_fonts.txt",
+        "samples/arxiv/primary_fonts.txt",
+        "samples/scholar/primary_fonts.txt",
+    ], "ml/font/training_data", 150000, enable_skip=False)
+    # split_train_eval("ml/font/training_data", "ml/font/evaluation_data", 0.85)
 
-    # generate_training_data(
-    #     [
-    #         # Times New Roman
-    #         "samples/sample16.pdf",
-    #         "samples/sample26.pdf",
-    #         "samples/sample27.pdf",
-    #         "samples/sample36.pdf",
-    #         "samples/sample4.pdf",
-    #         "samples/sample41.pdf",
-    #         "samples/sample47.pdf",
-    #         "samples/sample48.pdf",
-    #         "samples/sample57.pdf",
-    #         "samples/sample62.pdf",
-    #         "samples/sample7.pdf",
-
-    #         # ComputerModernSerif
-    #         "samples/sample12.pdf",
-    #         "samples/sample18.pdf",
-    #         "samples/sample5.pdf",
-    #         "samples/sample50.pdf",
-    #         "samples/sample55.pdf",
-    #         "samples/sample56.pdf",
-    #         "samples/sample58.pdf",
-    #         "samples/sample59.pdf",
-    #         "samples/sample60.pdf",
-
-    #         # Arial
-    #         "samples/sample3.pdf",
-    #         "samples/synthetic/Arial01_Volkshochschulen.pdf",
-    #         "samples/synthetic/Arial02_Terraria.pdf",
-
-    #         # AGaramond
-    #         "samples/sample1.pdf",
-    #         "samples/sample46.pdf",
-
-    #         # Verdana
-    #         "samples/sample10.pdf",
-    #         "samples/sample9.pdf",
-    #         "samples/synthetic/Verdana01_Volkshochschulen.pdf",
-    #         "samples/synthetic/Verdana02_Terraria.pdf",
-
-    #         # Helvetica
-    #         "samples/sample2.pdf",
-    #         "samples/sample45.pdf",
-
-    #         # LinLibertine
-    #         "samples/sample20.pdf",
-    #         "samples/sample21.pdf",
-    #     ],
-    #     "ml/font/training_data"
-    # )
+    # with pdfplumber.open("samples/output75.pdf") as pdf:
+    #     print(get_primary_font(pdf))
