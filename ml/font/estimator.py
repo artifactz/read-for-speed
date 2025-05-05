@@ -12,6 +12,8 @@ with open("ml/font/classes.json") as f:
 
 model = train.Net(classes)
 model.load_state_dict(torch.load("ml/font/model.pth"))
+if torch.cuda.is_available():
+    model.to(torch.device('cuda:0'))
 model.eval()
 
 

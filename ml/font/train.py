@@ -171,6 +171,7 @@ if __name__ == "__main__":
     device = torch.device('cuda:0') if torch.cuda.is_available() else None
     train_model(model, train_loader, 20, device)
 
+    model.to(torch.device('cpu'))
     torch.save(model.state_dict(), "ml/font/model.pth")
     with open("ml/font/classes.json", "w") as f:
         json.dump(dataset.classes, f)
