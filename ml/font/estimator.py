@@ -12,9 +12,10 @@ with open("ml/font/classes.json") as f:
 
 model = train.Net(classes)
 model.load_state_dict(torch.load("ml/font/model.pth"))
-if torch.cuda.is_available():
-    model.to(torch.device('cuda:0'))
 model.eval()
+device = torch.device('cuda:0') if torch.cuda.is_available() else None
+if device:
+    model.to(device)
 
 
 def estimate_primary_font(pdf: "pdfplumber.PDF", samples=24) -> tuple[str, str]:
@@ -38,6 +39,8 @@ def estimate_primary_font_from_samples(samples: Iterable) -> str:
     """
     tensors = [train.img_to_tensor(img) for img in samples]
     tensors = torch.stack(tensors)
+    if device:
+        tensors = tensors.to(device)
     with torch.no_grad():
         outputs = model(tensors)
         summed = outputs.sum(dim=0).cpu().numpy()
