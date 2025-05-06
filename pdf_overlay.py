@@ -6,7 +6,7 @@ from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen.canvas import Canvas
 import fonts
 from ml.font.extract import get_primary_font, CropSampler
-from util.memory_usage import get_memory_usage_mb
+from util.memory_usage import get_memory_usage_mb, get_top_memory_users_mb
 
 
 DEFAULT_CONFIG = {
@@ -346,6 +346,8 @@ def generate_text_overlay(input_pdf_file: IO | str):
     """
     Creates a temporary overlay pdf file and returns a metadata dict containing its path.
     """
+    logging.info(f"Memory usage before reading document: {get_memory_usage_mb()}")
+    logging.info(f"Top memory users: {get_top_memory_users_mb()}")
 
     font_names = set()
     missing_fonts = set()
@@ -358,8 +360,10 @@ def generate_text_overlay(input_pdf_file: IO | str):
         # Check if font names are encrypted
         if _is_primary_font_encrypted(input_pdf):
             logging.info(f"Memory usage before font estimation: {get_memory_usage_mb()}")
+            logging.info(f"Top memory users: {get_top_memory_users_mb()}")
             remapped_fonts = run_font_estimation(input_pdf)
             logging.info(f"Memory usage after font estimation: {get_memory_usage_mb()}")
+            logging.info(f"Top memory users: {get_top_memory_users_mb()}")
         else:
             remapped_fonts = {}
 

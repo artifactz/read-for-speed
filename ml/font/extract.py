@@ -8,6 +8,7 @@ import pdfplumber, pdfplumber.page
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 import fonts, util.io, util.tile_image
+from util.memory_usage import get_memory_usage_mb
 
 
 def index_primary_fonts(folder, index_file):
@@ -151,13 +152,15 @@ class CropSampler:
         img_page = None
         for page_number, rect in page_rects:
             if page_number != img_page:
-                # Rendering takes a lot of memory, so clean up
-                gc.collect()
                 page = self.pdf.pages[page_number]
-                img = page.to_image(self.dpi).original
+                logging.info(f"Memory usage before to_image: {get_memory_usage_mb()}")
+                img = page.to_image(self.dpi).original  # eats 258 mb memory on first call
+                logging.info(f"Memory usage after to_image: {get_memory_usage_mb()}")
                 img_page = page_number
             img_rect = self._convert_rect(rect, (page.width, page.height), (img.width, img.height))
             yield self._crop(img_rect, img)
+        # Rendering leaves behind a lot of unfreed memory, so clean up
+        # gc.collect()  # XXX doesn't do anything because memory is allocated in C
 
     @staticmethod
     def _convert_rect(rect: tuple, page_size: tuple, image_size: tuple) -> tuple:
@@ -260,8 +263,8 @@ def get_chars_in_rect(page: pdfplumber.page.Page, rect: tuple) -> list[dict]:
 
 def split_train_eval(training_folder: str | Path, evaluation_folder: str | Path, split_ratio: float = 0.85):
     """
-    Splits the training data into training and evaluation sets by moving files from the training folder to the
-    evaluation folder.
+    Splits the training data into training and evaluation sets by moving some of the document folders in the training
+    folder to the evaluation folder.
 
     :param training_folder: Folder containing the training data
     :param evaluation_folder: Folder to save the evaluation data
