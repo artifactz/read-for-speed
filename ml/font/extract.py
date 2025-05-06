@@ -1,5 +1,5 @@
-import sys, collections, logging, io, gc, multiprocessing.pool, contextlib, random, shutil
-from typing import Generator, Iterable
+import sys, collections, logging, multiprocessing.pool, contextlib, random, shutil
+from typing import Iterable
 from pathlib import Path
 import PIL.Image
 import numpy as np
@@ -8,7 +8,6 @@ import pdfplumber, pdfplumber.page
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 import fonts, util.io, util.tile_image
-from util.memory_usage import get_memory_usage_mb
 
 
 def index_primary_fonts(folder, index_file):
@@ -110,12 +109,15 @@ def generate_training_data(
     output_folder = Path(output_folder)
     if enable_skip and any((p / pdf_path.stem).exists() for p in output_folder.iterdir() if p.is_dir()):
         return
+
     try:
         with pdfplumber.open(pdf_path) as pdf:
-            sampler = CropSampler(pdf)
-            folder = output_folder / sampler.primary_font / pdf_path.stem
+            primary_font_raw = get_primary_font(pdf)
+            primary_font = fonts._disambiguate_identifier(primary_font_raw)
+            folder = output_folder / primary_font / pdf_path.stem
             folder.mkdir(parents=True, exist_ok=True)
-            sample_gen = sampler.sample_iter(num_samples)
+
+            sample_gen = sample_crops(pdf, primary_font_raw, num_samples)
             if verbose:
                 sample_gen = tqdm(sample_gen, desc=f"Processing {pdf_path.stem}", total=num_samples, unit="sample")
             with util.tile_image.tile_image_writer(folder) as writer:
@@ -126,71 +128,32 @@ def generate_training_data(
         print(f"Error reading file {pdf_path.name}: {e}")
 
 
-class CropSampler:
-    """Samples random crops from a PDF document as PIL images."""
-    def __init__(self, pdf: pdfplumber.PDF, crop_size: int = 128, rect_size: float = 64, k: int = 30, dpi: float = 600):
-        """
-        Initializes the CropSampler with a PDF document and parameters for sampling.
+def sample_crops(
+    pdf: pdfplumber.PDF, primary_font_raw: str, n: int, rect_size: float = 64, k: int = 30, crop_size: int = 128
+):
+    from pdf import render
 
-        :param pdf: pdfplumber PDF object
-        :param crop_size: size of the resulting crops (in pixels)
-        :param rect_size: size of the rectangle to sample (in PDF points)
-        :param k: number of attempts to sample a rectangle
-        :param dpi: resolution for rendering the PDF pages
-        """
-        self.pdf = pdf
-        self.crop_size = crop_size
-        self.rect_size = rect_size
-        self.dpi = dpi
-        self.k = k
-        self.primary_font_raw = get_primary_font(pdf)
-        self.primary_font = fonts._disambiguate_identifier(self.primary_font_raw)
+    page_rects = sorted(sample_page_rect(pdf, primary_font_raw, rect_size, k) for _ in range(n))
+    renderer = render.PdfRenderer(pdf.path, 600)
 
-    def sample_iter(self, n: int) -> Generator[PIL.Image.Image]:
-        """Samples a batch of random crops, minimizing the number of page renders."""
-        page_rects = sorted(sample_page_rect(self.pdf, self.primary_font_raw, self.rect_size, self.k) for _ in range(n))
-        img_page = None
-        for page_number, rect in page_rects:
-            if page_number != img_page:
-                page = self.pdf.pages[page_number]
-                logging.info(f"Memory usage before to_image: {get_memory_usage_mb()}")
-                img = page.to_image(self.dpi).original  # eats 258 mb memory on first call
-                logging.info(f"Memory usage after to_image: {get_memory_usage_mb()}")
-                img_page = page_number
-            img_rect = self._convert_rect(rect, (page.width, page.height), (img.width, img.height))
-            yield self._crop(img_rect, img)
-        # Rendering leaves behind a lot of unfreed memory, so clean up
-        # gc.collect()  # XXX doesn't do anything because memory is allocated in C
+    for page_number, rect in page_rects:
+        img = renderer.render_page_rect(page_number, rect)
+        img = img.convert("L")
+        img = img.resize((crop_size, crop_size))
+        img = normalize_crop(img)
+        yield img
 
-    @staticmethod
-    def _convert_rect(rect: tuple, page_size: tuple, image_size: tuple) -> tuple:
-        """Converts PDF rectangle coordinates to image coordinates."""
-        return (
-            rect[0] / page_size[0] * image_size[0],
-            (1 - (rect[3] / page_size[1])) * image_size[1],
-            rect[2] / page_size[0] * image_size[0],
-            (1 - (rect[1] / page_size[1])) * image_size[1],
-        )
 
-    def _crop(self, img_rect: tuple, image: PIL.Image.Image):
-        """Generates a grayscale crop."""
-        image = image.crop(img_rect)
-        image = image.convert("L")
-        image = image.resize((self.crop_size, self.crop_size))
-        image = self._preprocess(image)
-        return image
-
-    @staticmethod
-    def _preprocess(image: PIL.Image.Image, invert_threshold=127) -> PIL.Image.Image:
-        """Stretches colorspace to 0..255 and inverts the image if it's too dark."""
-        arr = np.array(image)
-        mini, maxi = float(arr.min()), float(arr.max())
-        color_range = maxi - mini
-        if not (color_range == 0 or (maxi == 255 and mini == 0)):
-            image = PIL.Image.eval(image, lambda x: round((x - mini) / color_range * 255))
-        if np.mean(arr) < invert_threshold:
-            image = PIL.Image.eval(image, lambda x: 255 - x)
-        return image
+def normalize_crop(image: PIL.Image.Image, invert_threshold=127) -> PIL.Image.Image:
+    """Stretches colorspace to 0..255 and inverts the image if it's too dark."""
+    arr = np.array(image)
+    mini, maxi = float(arr.min()), float(arr.max())
+    color_range = maxi - mini
+    if not (color_range == 0 or (maxi == 255 and mini == 0)):
+        image = PIL.Image.eval(image, lambda x: round((x - mini) / color_range * 255))
+    if np.mean(arr) < invert_threshold:
+        image = PIL.Image.eval(image, lambda x: 255 - x)
+    return image
 
 
 def get_primary_font(pdf: pdfplumber.PDF) -> str:

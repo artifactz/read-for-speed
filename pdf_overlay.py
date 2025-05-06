@@ -1,11 +1,10 @@
-import math, re, os, tempfile, collections, subprocess, gc, logging
+import math, re, tempfile, collections, subprocess, logging
 from typing import IO
 from tqdm import tqdm
 import pdfplumber
-from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen.canvas import Canvas
 import fonts
-from ml.font.extract import get_primary_font, CropSampler
+from ml.font import extract
 from util.memory_usage import get_memory_usage_mb, get_top_memory_users_mb
 
 
@@ -45,13 +44,6 @@ CHAR_MAP = {
     "ò": "o",
     "ù": "u",
 }
-
-
-def _is_primary_font_encrypted(pdf: pdfplumber.PDF) -> bool:
-    primary_font = get_primary_font(pdf)
-    if not primary_font:
-        return False
-    return _is_encrypted_font(primary_font)
 
 
 def _is_encrypted_font(font_name: str) -> bool:
@@ -320,26 +312,27 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, remapped_fonts
     }
 
 
-def run_font_estimation(pdf: pdfplumber.PDF, samples=16):
+def run_font_estimation(pdf: pdfplumber.PDF, pdf_font_name: str, samples=16):
     """
     Runs estimator.py in a subprocess, such that memory allocated by torch is freed as soon as we're done.
     Pytorch is currently only needed to estimate the primary font.
     """
     import pickle, time
+
     t0 = time.time()
-    sampler = CropSampler(pdf)
-    samples = list(sampler.sample_iter(samples))
-    logging.info(f"Memory usage after rendering samples: {get_memory_usage_mb()}")
+    samples = list(extract.sample_crops(pdf, pdf_font_name, samples))
     t1 = time.time()
+    logging.info(f"Memory usage after rendering samples: {get_memory_usage_mb()}")
+
     p = subprocess.Popen(["python", "ml/font/estimator.py", "--"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     pickle.dump(samples, p.stdin)
     p.stdin.close()
     result = p.stdout.readline()
     p.stdout.close()
     p.wait()
-    t2 = time.time()
-    logging.info(f"CropSampler time: {t1 - t0:.2f}s, estimator.py time: {t2 - t1:.2f}s")
-    return {sampler.primary_font_raw: result.decode("utf-8").strip()}
+    logging.info(f"Sampling time: {t1 - t0:.2f}s, estimation time: {time.time() - t1:.2f}s")
+
+    return {pdf_font_name: result.decode("utf-8").strip()}
 
 
 def generate_text_overlay(input_pdf_file: IO | str):
@@ -358,10 +351,11 @@ def generate_text_overlay(input_pdf_file: IO | str):
     remapped_fonts = None
     with pdfplumber.open(input_pdf_file) as input_pdf:
         # Check if font names are encrypted
-        if _is_primary_font_encrypted(input_pdf):
+        primary_font = extract.get_primary_font(input_pdf)
+        if primary_font is None or _is_encrypted_font(primary_font):
             logging.info(f"Memory usage before font estimation: {get_memory_usage_mb()}")
             logging.info(f"Top memory users: {get_top_memory_users_mb()}")
-            remapped_fonts = run_font_estimation(input_pdf)
+            remapped_fonts = run_font_estimation(input_pdf, primary_font)
             logging.info(f"Memory usage after font estimation: {get_memory_usage_mb()}")
             logging.info(f"Top memory users: {get_top_memory_users_mb()}")
         else:

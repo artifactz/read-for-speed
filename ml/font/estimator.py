@@ -18,17 +18,17 @@ if device:
     model.to(device)
 
 
-def estimate_primary_font(pdf: "pdfplumber.PDF", samples=24) -> tuple[str, str]:
+def estimate_primary_font(pdf: "pdfplumber.PDF", num_samples=24) -> tuple[str, str]:
     """
     Estimates the primary font used in a PDF document.
     :param pdf: pdfplumber pdf object to analyze
-    :param samples: number of samples to take from the document
+    :param num_samples: number of samples to take from the document
     :return: tuple of (predicted font name, font name used in the document)
     """
-    sampler = extract.CropSampler(pdf)
-    samples = sampler.sample_iter(samples)
+    primary_font_raw = extract.get_primary_font(pdf)
+    samples = extract.sample_crops(pdf, primary_font_raw, num_samples)
     prediction = estimate_primary_font_from_samples(samples)
-    return prediction, sampler.primary_font_raw
+    return prediction, primary_font_raw
 
 
 def estimate_primary_font_from_samples(samples: Iterable) -> str:

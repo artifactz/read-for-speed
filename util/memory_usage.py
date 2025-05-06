@@ -20,3 +20,7 @@ def get_top_memory_users_mb():
     all_processes = [(p.info["cmdline"], p.info["memory_info"].rss / 1e6) for p in psutil.process_iter(attrs=["cmdline", "memory_info"]) if p.pid != this_pid]
     all_processes.sort(key=lambda x: x[1], reverse=True)
     return all_processes[:10]
+
+
+if __name__ == "__main__":
+    print(get_memory_usage_mb())
