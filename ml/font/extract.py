@@ -1,5 +1,4 @@
-import sys, collections, logging, multiprocessing.pool, contextlib, random, shutil
-from typing import Iterable
+import sys, collections, logging, multiprocessing.pool, random, shutil, json
 from pathlib import Path
 import PIL.Image
 import numpy as np
@@ -7,43 +6,40 @@ from tqdm import tqdm
 import pdfplumber, pdfplumber.page
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
-import fonts, util.io, util.tile_image
+import fonts, util.tile_image
 
 
-def index_primary_fonts(folder, index_file):
-    """Stores the primary font of each PDF file in the given txt file."""
-    primary_fonts = {}
-    with contextlib.suppress(OSError):
-        with open(index_file) as f:
-            for line in f.readlines():
-                k, v = line.split(":")
-                primary_fonts[k] = v.strip()
-
+def index_primary_fonts(folder, update_existing=False):
+    """Stores the primary font of each PDF file in the database."""
+    from ml.font import pdf_data
     logging.getLogger('pdfminer.pdfpage').setLevel(logging.ERROR)
-    paths = list(Path(folder).glob("*.pdf"))
-    for path in tqdm(paths, file=sys.stderr):
-        if path.name in primary_fonts:
-            continue
 
-        try:
-            with pdfplumber.open(path) as pdf:
-                primary_font = get_primary_font(pdf)
-        except Exception as e:
-            print(f"Error reading file {path.name}: {e}")
-            primary_font = None
-        if primary_font:
-            primary_font = fonts._disambiguate_identifier(primary_font)
+    paths = [str(path).replace("\\", "/") for path in Path(folder).glob("*.pdf")]
+    existing_entries = [pdf_data.get_pdf_file(path) for path in paths]
 
-        with open(index_file, "a") as f:
-            f.write(f"{path.name}: {primary_font}\n")
+    if not update_existing:
+        paths = [path for path, entry in zip(paths, existing_entries) if not entry]
+        existing_entries = [None] * len(paths)
+
+    pool = multiprocessing.pool.Pool(16, initializer=_silence_pdfminer)
+    for path, existing_entry, primary_font_raw in zip(
+        paths, existing_entries, tqdm(pool.imap(get_primary_font_from_path, paths), total=len(paths))
+    ):
+        primary_font = fonts.disambiguate_identifier(primary_font_raw) if primary_font_raw else None
+        if existing_entry:
+            pdf_data.update_pdf_file(path, primary_font=primary_font, primary_font_raw=primary_font_raw)
+        else:
+            pdf_data.add_pdf_file(path, primary_font=primary_font, primary_font_raw=primary_font_raw)
+
+    pool.close()
+    pool.join()
 
 
-def generate_training_data_from_primary_fonts(
-    primary_fonts_path: str | Path | Iterable[str | Path],
+def generate_training_data_from_database(
     output_folder: str,
     total_samples: int,
-    enable_skip=True,
-    classes=["ComputerModernSerif", "TimesNewRoman", "NimbusRomNo9L", "P052", "LinLibertine", "MinionPro", "Arial", "Calibri", "Helvetica", "AGaramond", "Calisto"]
+    classes=["ComputerModernSerif", "TimesNewRoman", "NimbusRomNo9L", "P052", "MinionPro", "STIXTwoText", "WarnockPro",
+             "Arial", "Calibri", "AGaramond", "LinLibertine", "Cambria", "PTSerif", "Helvetica"]
 ):
     """
     Generates training data by sampling random crops from PDF documents and saving them as images. Balances the number
@@ -56,18 +52,22 @@ def generate_training_data_from_primary_fonts(
     :param enable_skip: If True, skips documents that have already been processed
     :param classes: List of font classes to include in the training data
     """
+    from ml.font import pdf_data
     logging.getLogger('pdfminer.pdfpage').setLevel(logging.ERROR)
     path_fonts = []
     num_documents = collections.Counter()
 
-    for path, font in util.io.load_file_values(primary_fonts_path):
-        if font in classes:
-            path_fonts.append((path, font))
-            num_documents[font] += 1
+    for pdf_entry in pdf_data.get_pdf_files():
+        path = pdf_entry["path"]
+        font = pdf_entry["primary_font"]
+        if not font in classes or (pdf_entry["qa_status"] in ["scan", "weird"]):
+            continue
+        path_fonts.append((path, font))
+        num_documents[font] += 1
 
     num_samples_per_class = total_samples / len(classes)
     class_num_samples = {k: round(num_samples_per_class / v) for k, v in num_documents.items()}
-    args = [(path, output_folder, class_num_samples[font], enable_skip, False) for path, font in path_fonts]
+    args = [(path, output_folder, class_num_samples[font], False) for path, font in path_fonts]
     random.shuffle(args)
 
     pool = multiprocessing.pool.Pool(16, initializer=_silence_pdfminer)
@@ -79,25 +79,11 @@ def generate_training_data_from_primary_fonts(
     #     generate_training_data(*arg)
 
 
-def generate_training_data_from_list(pdf_paths: list, output_folder: str, num_samples_per_document: int = 100):
-    """
-    Generates training data by sampling random crops from PDF documents and saving them as images.
-
-    :param pdf_paths: list of paths to PDF documents
-    :param output_folder: folder to save the generated images (creates font_name/document_name subfolders)
-    """
-    logging.getLogger('pdfminer.pdfpage').setLevel(logging.ERROR)
-    for pdf_path in pdf_paths:
-        generate_training_data(pdf_path, output_folder, num_samples_per_document)
-
-
 def _generate_training_data_star(args):
     generate_training_data(*args)
 
 
-def generate_training_data(
-    pdf_path: str, output_folder: str | Path, num_samples: int = 100, enable_skip=True, verbose=True
-):
+def generate_training_data(pdf_path: str, output_folder: str | Path, num_samples: int = 100, verbose=True):
     """
     Generates training data by sampling random crops from PDF documents and saving them as PNG images.
 
@@ -107,13 +93,11 @@ def generate_training_data(
     """
     pdf_path = Path(pdf_path)
     output_folder = Path(output_folder)
-    if enable_skip and any((p / pdf_path.stem).exists() for p in output_folder.iterdir() if p.is_dir()):
-        return
 
     try:
         with pdfplumber.open(pdf_path) as pdf:
             primary_font_raw = get_primary_font(pdf)
-            primary_font = fonts._disambiguate_identifier(primary_font_raw)
+            primary_font = fonts.disambiguate_identifier(primary_font_raw)
             folder = output_folder / primary_font / pdf_path.stem
             folder.mkdir(parents=True, exist_ok=True)
 
@@ -128,13 +112,22 @@ def generate_training_data(
         print(f"Error reading file {pdf_path.name}: {e}")
 
 
-def sample_crops(
-    pdf: pdfplumber.PDF, primary_font_raw: str, n: int, rect_size: float = 64, k: int = 30, crop_size: int = 128
-):
+def sample_crops(pdf: pdfplumber.PDF, primary_font_raw: str, n: int, rect_size: float = 64, k: int = 30,
+                 crop_size: int = 128, dpi: float = 600):
+    """
+    Samples random crops from a PDF document.
+
+    :param pdf: pdfplumber PDF object
+    :param primary_font_raw: pdf font name of preferred font
+    :param n: number of crops to sample
+    :param rect_size: size of the rectangle to sample (in PDF points)
+    :param k: number of attempts to sample a rectangle
+    :param crop_size: size of the resulting crops (in pixels)
+    """
     from pdf import render
 
     page_rects = sorted(sample_page_rect(pdf, primary_font_raw, rect_size, k) for _ in range(n))
-    renderer = render.PdfRenderer(pdf.path, 600)
+    renderer = render.PdfRenderer(pdf.path, dpi)
 
     for page_number, rect in page_rects:
         img = renderer.render_page_rect(page_number, rect)
@@ -146,18 +139,33 @@ def sample_crops(
 
 def normalize_crop(image: PIL.Image.Image, invert_threshold=127) -> PIL.Image.Image:
     """Stretches colorspace to 0..255 and inverts the image if it's too dark."""
-    arr = np.array(image)
-    mini, maxi = float(arr.min()), float(arr.max())
+    changed = False
+    arr = np.array(image, dtype=float)
+    mini, maxi = arr.min(), arr.max()
     color_range = maxi - mini
-    if not (color_range == 0 or (maxi == 255 and mini == 0)):
-        image = PIL.Image.eval(image, lambda x: round((x - mini) / color_range * 255))
+    if not (color_range == 0 or (mini == 0 and maxi == 255)):
+        arr = (arr - mini) / color_range * 255
+        changed = True
     if np.mean(arr) < invert_threshold:
-        image = PIL.Image.eval(image, lambda x: 255 - x)
-    return image
+        arr = 255 - arr
+        changed = True
+    if not changed:
+        return image
+    arr = np.clip(arr, 0, 255).astype(np.uint8)
+    return PIL.Image.fromarray(arr, mode="L")
+
+
+def get_primary_font_from_path(path: str | Path) -> str:
+    """Returns the most used font in a PDF document specified by path."""
+    try:
+        with pdfplumber.open(path) as pdf:
+            return get_primary_font(pdf)
+    except Exception as e:
+        print(f"Error reading file {path}: {e}")
 
 
 def get_primary_font(pdf: pdfplumber.PDF) -> str:
-    """Returns the most used font in a PDF document."""
+    """Returns the most used font in a PDF document object."""
     font_counts = count_font_characters(pdf)
     if not font_counts:
         return None
@@ -224,33 +232,35 @@ def get_chars_in_rect(page: pdfplumber.page.Page, rect: tuple) -> list[dict]:
     return chars_in_rect
 
 
-def split_train_eval(training_folder: str | Path, evaluation_folder: str | Path, split_ratio: float = 0.85):
+def split_train_eval(training_folder: str | Path, evaluation_folder: str | Path, eval_pdfs_file: str | Path):
     """
     Splits the training data into training and evaluation sets by moving some of the document folders in the training
     folder to the evaluation folder.
 
     :param training_folder: Folder containing the training data
     :param evaluation_folder: Folder to save the evaluation data
-    :param split_ratio: Ratio of training data
+    :param eval_pdfs_file: File containing the list of PDF files to use for evaluation
     """
+    with open(eval_pdfs_file) as f:
+        eval_pdfs = json.load(f)
     training_folder = Path(training_folder)
     evaluation_folder = Path(evaluation_folder)
     for font_folder in training_folder.iterdir():
         doc_folders = list(font_folder.iterdir())
-        num_move = round(len(doc_folders) * (1 - split_ratio))
-        for path in random.sample(doc_folders, num_move):
-            new_path = evaluation_folder / path.relative_to(training_folder)
-            shutil.move(path, new_path)
+        for path in doc_folders:
+            if str(path).replace("\\", "/") in eval_pdfs:
+                new_path = evaluation_folder / path.relative_to(training_folder)
+                shutil.move(path, new_path)
 
 
-def show_crops(pdf_path, n: int, *args, **kwargs):
+def show_crops(pdf_path, n: int):
     """Generates random crops from a PDF document and displays them in a grid."""
     import cv2
     with pdfplumber.open(pdf_path) as pdf:
-        sampler = CropSampler(pdf, *args, **kwargs)
-        crops = list(sampler.sample_iter(n))
+        primary_font_raw = get_primary_font(pdf)
+        crops = list(sample_crops(pdf, primary_font_raw, n))
         tabularized = tabularize_crops([np.array(c) for c in crops])
-        cv2.imshow(sampler.primary_font, tabularized)
+        cv2.imshow(primary_font_raw, tabularized)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
@@ -273,15 +283,12 @@ def _silence_pdfminer():
 
 
 if __name__ == "__main__":
-    # show_crops("samples/sample8.pdf", 12)
-    # index_primary_fonts("samples/arxiv", "samples/arxiv/primary_fonts.txt")
-    # index_primary_fonts("samples/scholar", "samples/scholar/primary_fonts.txt")
-    generate_training_data_from_primary_fonts([
-        "samples/primary_fonts.txt",
-        "samples/arxiv/primary_fonts.txt",
-        "samples/scholar/primary_fonts.txt",
-    ], "ml/font/training_data", 150000, enable_skip=False)
-    # split_train_eval("ml/font/training_data", "ml/font/evaluation_data", 0.85)
+    # show_crops("samples/arxiv/2003.08388v1.pdf", 25)
+    # index_primary_fonts("samples/arxiv", update_existing=False)
+    # index_primary_fonts("samples/scholar", update_existing=False)
+
+    generate_training_data_from_database("ml/font/training_data", 200000)
+    split_train_eval("ml/font/training_data", "ml/font/evaluation_data", "ml/font/evaluation_pdfs.json")
 
     # with pdfplumber.open("samples/output75.pdf") as pdf:
     #     print(get_primary_font(pdf))

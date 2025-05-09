@@ -154,8 +154,9 @@ def run_model_test(pdf_path: str, model: Net = None, num_samples: int = 24):
         model = estimator.model
 
     with pdfplumber.open(pdf_path) as pdf:
-        sampler = extract.CropSampler(pdf)
-        samples = list(sampler.sample_iter(num_samples))
+        primary_font_raw = extract.get_primary_font(pdf)
+        samples = list(extract.sample_crops(pdf, primary_font_raw, num_samples))
+
         # Workaround for a crash due to conflicting OpenMP instances from pytorch and matplotlib
         os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
         test_model(model, samples)

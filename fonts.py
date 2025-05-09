@@ -76,7 +76,7 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extra
     Sets up a boldened version of a font for overlay.
     """
     result = {}
-    identifier = _disambiguate_identifier(pdf_font_identifier)
+    identifier = disambiguate_identifier(pdf_font_identifier)
     identifier = _handle_times(identifier)
 
     if remapping := _get_remapping(identifier):
@@ -146,7 +146,7 @@ def _init_remapped_fonts():
             _remapped_fonts[identifier] = None
 
 
-def _disambiguate_identifier(pdf_identifier: str) -> str:
+def disambiguate_identifier(pdf_identifier: str) -> str:
     """
     Cleans up a PDF font identifier.
     """

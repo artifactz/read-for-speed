@@ -387,6 +387,7 @@ def generate_text_overlay(input_pdf_file: IO | str):
     has_encrypted_fonts = any(_is_encrypted_font(f) for f in missing_fonts)
     font_estimation = {"estimated_primary_font": list(remapped_fonts.values())[0]} if remapped_fonts else {}
     summary = "warning" if success_ratio < 0.5 else "ok"
+    primary_font = fonts.disambiguate_identifier(primary_font) if primary_font else None
 
     return {
         "path": overlay_pdf.name,
@@ -394,6 +395,7 @@ def generate_text_overlay(input_pdf_file: IO | str):
         "total_words": total_words,
         "successful_words": successful_words,
         "success_ratio": success_ratio,
+        "primary_font": primary_font,
         "has_encrypted_fonts": has_encrypted_fonts,
         **font_estimation
     }
