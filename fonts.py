@@ -90,8 +90,8 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extra
             identifier = _bolden(identifier)
         except FontIsExtraboldException:
             return {"state": "too_bold"}
-        if not use_extrabold and "Extrabold" in identifier:
-            return {"state": "too_bold"}
+    if not use_extrabold and "Extrabold" in identifier:
+        return {"state": "too_bold"}
 
     identifier = _handle_helvetica(identifier)
 

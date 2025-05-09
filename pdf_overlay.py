@@ -11,7 +11,7 @@ from util.memory_usage import get_memory_usage_mb, get_top_memory_users_mb
 DEFAULT_CONFIG = {
     "draw_bbox": True,  # Hides existing characters by drawing a filled bounding box.
     "typesetting_mode": "x_offset",  # How to position characters: "full_offset", "x_offset", or "rearranged".
-    "use_extrabold": False  # Will overlay bold text with extrabold text. Skipped otherwise.
+    "use_extrabold": True  # Allow overlay of bold text with extrabold text. Skipped otherwise.
 }
 
 
@@ -225,12 +225,15 @@ def _iter_rearranged_chars(line_chars, overlay_font):
         yield (x, y, c)
 
 
-def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, remapped_fonts: dict = None, config=None):
+def _draw_page_overlay(
+    canvas: Canvas, page: pdfplumber.pdf.Page, primary_font: str, remapped_fonts: dict = None, config=None
+):
     """
     Draws the overlay for the page to the canvas.
 
     :param canvas: Reportlab canvas object to draw on
     :param page: Pdfplumber page object
+    :param primary_font: The primary font of the document, controls extrabold usage
     :param remapped_fonts: Dictionary of font names to replace
     :param config: See `DEFAULT_CONFIG`
     """
@@ -267,12 +270,18 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, remapped_fonts
             font_names.add(font_name)
             if font_name in remapped_fonts:
                 font_name = remapped_fonts[font_name]
-            overlay_font = fonts.setup_boldened_font(canvas, font_name, font_size, config["use_extrabold"])
+
+            # Only allow extrabold usage if it's for the primary font
+            is_primary_font = fonts.disambiguate_identifier(font_name) == primary_font
+            use_extrabold = config["use_extrabold"] and is_primary_font
+
+            overlay_font = fonts.setup_boldened_font(canvas, font_name, font_size, use_extrabold)
             if overlay_font["state"] != "ok":
                 if overlay_font["state"] == "missing":
                     missing_fonts.add(overlay_font["name"])
                 current_font_is_valid = False
                 continue
+
             current_font_is_valid = True
             config = dict(original_config)
             if overlay_font.get("config"):
@@ -351,11 +360,12 @@ def generate_text_overlay(input_pdf_file: IO | str):
     remapped_fonts = None
     with pdfplumber.open(input_pdf_file) as input_pdf:
         # Check if font names are encrypted
-        primary_font = extract.get_primary_font(input_pdf)
-        if primary_font is None or _is_encrypted_font(primary_font):
+        primary_font_raw = extract.get_primary_font(input_pdf)
+        primary_font = fonts.disambiguate_identifier(primary_font_raw) if primary_font_raw else None
+        if primary_font_raw is None or _is_encrypted_font(primary_font_raw):
             logging.info(f"Memory usage before font estimation: {get_memory_usage_mb()}")
             logging.info(f"Top memory users: {get_top_memory_users_mb()}")
-            remapped_fonts = run_font_estimation(input_pdf, primary_font)
+            remapped_fonts = run_font_estimation(input_pdf, primary_font_raw)
             logging.info(f"Memory usage after font estimation: {get_memory_usage_mb()}")
             logging.info(f"Top memory users: {get_top_memory_users_mb()}")
         else:
@@ -371,7 +381,7 @@ def generate_text_overlay(input_pdf_file: IO | str):
 
             # for page in tqdm(input_pdf.pages, "Generating overlay pages", file=sys.stderr):
             for page_number, page in enumerate(input_pdf.pages):
-                page_result = _draw_page_overlay(canvas, page, remapped_fonts)
+                page_result = _draw_page_overlay(canvas, page, primary_font, remapped_fonts)
                 canvas.showPage()  # new page
                 font_names |= page_result["font_names"]
                 missing_fonts |= page_result["missing_fonts"]
@@ -387,7 +397,6 @@ def generate_text_overlay(input_pdf_file: IO | str):
     has_encrypted_fonts = any(_is_encrypted_font(f) for f in missing_fonts)
     font_estimation = {"estimated_primary_font": list(remapped_fonts.values())[0]} if remapped_fonts else {}
     summary = "warning" if success_ratio < 0.5 else "ok"
-    primary_font = fonts.disambiguate_identifier(primary_font) if primary_font else None
 
     return {
         "path": overlay_pdf.name,
