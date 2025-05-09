@@ -312,7 +312,7 @@ def _draw_page_overlay(canvas: Canvas, page: pdfplumber.pdf.Page, remapped_fonts
     }
 
 
-def run_font_estimation(pdf: pdfplumber.PDF, pdf_font_name: str, samples=16):
+def run_font_estimation(pdf: pdfplumber.PDF, pdf_font_name: str, samples=5):
     """
     Runs estimator.py in a subprocess, such that memory allocated by torch is freed as soon as we're done.
     Pytorch is currently only needed to estimate the primary font.
