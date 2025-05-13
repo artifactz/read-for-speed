@@ -51,7 +51,7 @@ def _overlay_files(uploaded_file_storage) -> Response:
         uploaded_file_storage.save(input_pdf_file.name)
 
     output_pdf_path = tempfile.mktemp(suffix=".pdf")
-    metadata = read_for_speed.run_processes(input_pdf_file.name, output_pdf_path)
+    metadata = read_for_speed.run(input_pdf_file.name, output_pdf_path)
     os.remove(input_pdf_file.name)
 
     with open(output_pdf_path, "rb") as output_pdf_file:

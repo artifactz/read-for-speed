@@ -1,4 +1,4 @@
-import math, re, tempfile, collections, subprocess, logging
+import math, re, tempfile, collections, logging, time
 from typing import IO
 from tqdm import tqdm
 import pdfplumber
@@ -321,27 +321,21 @@ def _draw_page_overlay(
     }
 
 
-def run_font_estimation(pdf: pdfplumber.PDF, pdf_font_name: str, samples=5):
+def run_font_estimation(pdf: pdfplumber.PDF, primary_font_raw: str, samples=5) -> str:
     """
-    Runs estimator.py in a subprocess, such that memory allocated by torch is freed as soon as we're done.
-    Pytorch is currently only needed to estimate the primary font.
-    """
-    import pickle, time
+    Runs the font estimation on the given PDF document.
 
+    :param pdf: pdfplumber document to analyze
+    :param primary_font_raw: Identifier of the primary font used in the document
+    :param samples: Number of samples to take from the document
+    """
     t0 = time.time()
-    samples = list(extract.sample_crops(pdf, pdf_font_name, samples))
-    t1 = time.time()
-    logging.info(f"Memory usage after rendering samples: {get_memory_usage_mb()}")
-
-    p = subprocess.Popen(["python", "ml/font/estimator.py", "--"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-    pickle.dump(samples, p.stdin)
-    p.stdin.close()
-    result = p.stdout.readline()
-    p.stdout.close()
-    p.wait()
-    logging.info(f"Sampling time: {t1 - t0:.2f}s, estimation time: {time.time() - t1:.2f}s")
-
-    return {pdf_font_name: result.decode("utf-8").strip()}
+    samples = extract.sample_crops(pdf, primary_font_raw, samples)
+    from ml.font import estimator_onnx as estimator
+    # from ml.font import estimator_torch as estimator
+    prediction = estimator.Model().predict_from_samples(samples)
+    logging.info(f"Font estimation time: {time.time() - t0:.2f}s")
+    return prediction
 
 
 def generate_text_overlay(input_pdf_file: IO | str):
@@ -349,7 +343,6 @@ def generate_text_overlay(input_pdf_file: IO | str):
     Creates a temporary overlay pdf file and returns a metadata dict containing its path.
     """
     logging.info(f"Memory usage before reading document: {get_memory_usage_mb()}")
-    logging.info(f"Top memory users: {get_top_memory_users_mb()}")
 
     font_names = set()
     missing_fonts = set()
@@ -357,19 +350,19 @@ def generate_text_overlay(input_pdf_file: IO | str):
     successful_words = 0
 
     logging.info("Reading document.")
-    remapped_fonts = None
     with pdfplumber.open(input_pdf_file) as input_pdf:
         # Check if font names are encrypted
         primary_font_raw = extract.get_primary_font(input_pdf)
-        primary_font = fonts.disambiguate_identifier(primary_font_raw) if primary_font_raw else None
-        if primary_font_raw is None or _is_encrypted_font(primary_font_raw):
+        remapped_fonts = {}
+        if primary_font_raw is None:
+            primary_font = None
+        elif (is_primary_font_encrypted := _is_encrypted_font(primary_font_raw)):
             logging.info(f"Memory usage before font estimation: {get_memory_usage_mb()}")
-            logging.info(f"Top memory users: {get_top_memory_users_mb()}")
-            remapped_fonts = run_font_estimation(input_pdf, primary_font_raw)
+            primary_font = run_font_estimation(input_pdf, primary_font_raw)
+            remapped_fonts = {primary_font_raw: primary_font}
             logging.info(f"Memory usage after font estimation: {get_memory_usage_mb()}")
-            logging.info(f"Top memory users: {get_top_memory_users_mb()}")
         else:
-            remapped_fonts = {}
+            primary_font = fonts.disambiguate_identifier(primary_font_raw) if primary_font_raw else None
 
         # Determine page size
         page_sizes = sorted((page.width, page.height) for page in input_pdf.pages)
@@ -390,12 +383,11 @@ def generate_text_overlay(input_pdf_file: IO | str):
                 logging.info(f"Memory usage after generating page {page_number}: {get_memory_usage_mb()}")
             canvas.save()
 
-    logging.info(f"Document fonts: {font_names}")
-    logging.info(f"Missing fonts: {missing_fonts}")
+    logging.info(f"Document fonts: {sorted(font_names)}")
+    logging.info(f"Missing fonts: {sorted(missing_fonts)}")
 
     success_ratio = successful_words / total_words if total_words > 0 else 0
     has_encrypted_fonts = any(_is_encrypted_font(f) for f in missing_fonts)
-    font_estimation = {"estimated_primary_font": list(remapped_fonts.values())[0]} if remapped_fonts else {}
     summary = "warning" if success_ratio < 0.5 else "ok"
 
     return {
@@ -406,7 +398,7 @@ def generate_text_overlay(input_pdf_file: IO | str):
         "success_ratio": success_ratio,
         "primary_font": primary_font,
         "has_encrypted_fonts": has_encrypted_fonts,
-        **font_estimation
+        "is_primary_font_encrypted": is_primary_font_encrypted,
     }
 
 

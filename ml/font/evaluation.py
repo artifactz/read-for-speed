@@ -1,31 +1,27 @@
 import sys, os, collections, logging, multiprocessing, datetime, json
 from pathlib import Path
-import torch
+import numpy as np
 from tqdm import tqdm
-from ml.font import estimator, train, extract
+from ml.font import extract
 import util.tile_image
 
 
 EVALUATION_DATA_PATH = "ml/font/evaluation_data"
 EVALUATION_PDFS_PATH = "ml/font/evaluation_pdfs.json"
+MODEL_TYPE = "ONNX"  # or "TORCH"
 
 
-def run_crop_data_eval(batch_size: int = 1024):
+def run_crop_data_eval(model, batch_size: int = 1024):
     """Runs an evaluation of the model on the evaluation_data folder."""
-    tensors, labels = load_crop_data()
-
-    if estimator.device:
-        tensors = tensors.to(estimator.device)
+    crops, labels = load_crop_data()
     output_chunks = []
-    with torch.no_grad():
-        for i in tqdm(range(0, len(tensors), batch_size), desc="Evaluating batches"):
-            start = i
-            end = min(i + batch_size, len(tensors))
-            batch = tensors[start:end]
-            output_chunks.append(estimator.model(batch))
-    outputs = torch.cat(output_chunks, dim=0).cpu().numpy()
-
-    hits, misses = verify_outputs(outputs, labels)
+    for i in tqdm(range(0, len(crops), batch_size), desc="Evaluating batches"):
+        start = i
+        end = min(i + batch_size, len(crops))
+        batch = crops[start:end]
+        output_chunks.append(model.predict(batch))
+    outputs = np.concatenate(output_chunks, axis=0)
+    hits, misses = verify_outputs(outputs, model.classes, labels)
 
     stats = calculate_stats(hits, misses)
     for c, acc in stats["class_accs"].items():
@@ -45,20 +41,16 @@ def load_crop_data():
                 label = path.parent.stem
                 samples.append((img, label))
 
-    tensors = [train.img_to_tensor(img) for img, _ in samples]
-    tensors = torch.stack(tensors)
-    labels = [label for _, label in samples]
-
-    return tensors, labels
+    return zip(*samples)
 
 
-def verify_outputs(outputs, labels):
+def verify_outputs(outputs, classes, labels):
     """Compares the model outputs with the labels and counts hits and misses."""
     hits, misses = collections.Counter(), collections.Counter()
 
     for sample_outputs, label in zip(outputs, labels):
         predicted = sample_outputs.argmax()
-        predicted = estimator.classes[predicted]
+        predicted = classes[predicted]
         if predicted == label:
             hits[label] += 1
         else:
@@ -68,7 +60,8 @@ def verify_outputs(outputs, labels):
 
 
 def calculate_stats(hits, misses):
-    class_accs = {c: (hits[c] / (hits[c] + misses[c])) if hits[c] + misses[c] > 0 else None for c in estimator.classes}
+    classes = set(hits.keys()) | set(misses.keys())
+    class_accs = {c: (hits[c] / (hits[c] + misses[c])) if hits[c] + misses[c] > 0 else None for c in classes}
 
     total_hits = sum(hits.values())
     total_misses = sum(misses.values())
@@ -104,7 +97,7 @@ def verify_pdf_files(pdfs_file: str | Path, num_samples: int):
 
     hits, misses = 0, 0
     args = [(path, num_samples, out_folder) for path in paths]
-    pool = multiprocessing.Pool(14, initializer=_silence_warnings)
+    pool = multiprocessing.Pool(14, initializer=_initialize_pool_process)
     results = list(tqdm(pool.imap(_get_pdf_label_prediction_star, args), total=len(args), desc="Evaluating PDF files"))
     pool.close()
     pool.join()
@@ -130,7 +123,7 @@ def _get_pdf_label_prediction(path, num_samples, out_folder):
         primary_font_raw = extract.get_primary_font(pdf)
         samples = list(extract.sample_crops(pdf, primary_font_raw, num_samples))
 
-    prediction = estimator.estimate_primary_font_from_samples(samples)
+    prediction = _model.predict_from_samples(samples)
     label = fonts.disambiguate_identifier(primary_font_raw)
 
     if prediction != label:
@@ -144,11 +137,28 @@ def _get_pdf_label_prediction(path, num_samples, out_folder):
     return label, prediction
 
 
-def _silence_warnings():
+_model = None
+
+def _initialize_pool_process():
+    global _model
+    if _model is None:
+        _model = _load_model()
+    # Also suppress pdfminer warnings
     logging.getLogger('pdfminer.pdfpage').setLevel(logging.ERROR)
     sys.stderr = open(os.devnull, 'w')
 
 
+def _load_model():
+    if MODEL_TYPE == "TORCH":
+        import estimator_torch
+        return estimator_torch.Model()
+    elif MODEL_TYPE == "ONNX":
+        import estimator_onnx
+        return estimator_onnx.Model()
+    else:
+        raise ValueError(f"Unknown model type: {MODEL_TYPE}")
+
+
 if __name__ == "__main__":
-    # run_crop_data_eval()
+    # run_crop_data_eval(model=_load_model())
     run_pdf_files_eval(num_samples=4)

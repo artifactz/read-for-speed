@@ -3,6 +3,7 @@ google-cloud-logging
 gunicorn
 msgpack
 numpy
+onnxruntime
 pillow
 pdfplumber
 psutil
@@ -10,5 +11,3 @@ pypdf2
 pypdfium2
 reportlab
 tqdm
-torch
-torchvision

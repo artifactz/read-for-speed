@@ -162,6 +162,18 @@ def run_model_test(pdf_path: str, model: Net = None, num_samples: int = 24):
         test_model(model, samples)
 
 
+def export_onnx(model_path="ml/font/model.pth", classes_path="ml/font/classes.json", output_path="ml/font/model.onnx"):
+    with open(classes_path) as f:
+        classes = json.load(f)
+    model = Net(classes)
+    model.load_state_dict(torch.load(model_path))
+    model.eval()
+    input_tensor = torch.randn(1, 1, 128, 128)
+    dynamic_axes = {'input' : {0 : 'batch_size'}, 'output' : {0 : 'batch_size'}}
+    torch.onnx.export(model, (input_tensor,), output_path, input_names=["input"],
+                      dynamic_axes=dynamic_axes, dynamo=False)
+
+
 if __name__ == "__main__":
     dataset = FontsDataset("ml/font/training_data")
     print(dataset.get_stats())
@@ -176,5 +188,7 @@ if __name__ == "__main__":
     torch.save(model.state_dict(), "ml/font/model.pth")
     with open("ml/font/classes.json", "w") as f:
         json.dump(dataset.classes, f)
+
+    export_onnx()
 
     # run_model_test("samples/encrypted/sample31.pdf")
