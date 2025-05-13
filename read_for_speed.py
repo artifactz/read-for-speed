@@ -28,7 +28,9 @@ def run(input_pdf_file: IO | str, output_pdf_file: IO | str):
     del metadata["path"]
     logging.info(f"Memory usage after merge: {get_memory_usage_mb()}")
 
-    return dict(metadata, total_duration=time.time() - t0)
+    metadata["total_duration"] = time.time() - t0
+    logging.info(f"Metadata: {metadata}")
+    return metadata
 
 
 def run_processes(input_pdf_path: str, output_pdf_path: str):
@@ -53,7 +55,9 @@ def run_processes(input_pdf_path: str, output_pdf_path: str):
     del metadata["path"]
     logging.info(f"Memory usage after merge: {get_memory_usage_mb()}")
 
-    return dict(metadata, total_duration=time.time() - t0)
+    metadata["total_duration"] = time.time() - t0
+    logging.info(f"Metadata: {metadata}")
+    return metadata
 
 
 if __name__ == "__main__":

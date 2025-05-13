@@ -9,15 +9,17 @@ import google.cloud.logging
 import read_for_speed
 
 
+# Initialize Google Cloud Logging
+client = google.cloud.logging.Client()
+client.setup_logging()
+
+
 app = Flask(__name__)
+
 
 @app.route("/overlay", methods=["POST"])
 def overlay():
     """Receives a PDF, overlays it, and returns the modified PDF."""
-    # Initialize Google Cloud Logging
-    client = google.cloud.logging.Client()
-    client.setup_logging()
-
     if "file" not in request.files:
         return {"error": "No file uploaded"}, 400
 
