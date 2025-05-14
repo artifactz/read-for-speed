@@ -22,6 +22,7 @@ FONT_MAP = {
     "DGMetaSerifScience": "DeGruyterSerif",
     "DGMetaScience": "DeGruyterSans",
     "LMRoman10": "ComputerModernSerif",
+    "Minion": "MinionPro",
     "NimbusSanL": "NimbusSans",
     "STIX": "STIXTwoText",
     "STIXGeneral": "STIXTwoText",
