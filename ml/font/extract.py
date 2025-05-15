@@ -236,6 +236,7 @@ def split_train_eval(training_folder: str | Path, evaluation_folder: str | Path,
     """
     Splits the training data into training and evaluation sets by moving some of the document folders in the training
     folder to the evaluation folder.
+    NOTE: Assuming unique file names across training data, even if in different subfolders.
 
     :param training_folder: Folder containing the training data
     :param evaluation_folder: Folder to save the evaluation data
@@ -243,12 +244,13 @@ def split_train_eval(training_folder: str | Path, evaluation_folder: str | Path,
     """
     with open(eval_pdfs_file) as f:
         eval_pdfs = json.load(f)
+    eval_pdf_stems = [Path(p).stem for p in eval_pdfs]
     training_folder = Path(training_folder)
     evaluation_folder = Path(evaluation_folder)
     for font_folder in training_folder.iterdir():
         doc_folders = list(font_folder.iterdir())
         for path in doc_folders:
-            if str(path).replace("\\", "/") in eval_pdfs:
+            if path.name in eval_pdf_stems:
                 new_path = evaluation_folder / path.relative_to(training_folder)
                 shutil.move(path, new_path)
 
