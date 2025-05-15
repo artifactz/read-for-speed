@@ -1,13 +1,32 @@
-import json, random, collections
+import json, random, collections, itertools, datetime
 from PIL import Image
 from pathlib import Path
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torchvision.transforms as T
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 import util.tile_image
+
+
+def run_training():
+    print("Total number of parameters:", sum(p.numel() for p in Net(list(range(14))).parameters()))
+    # exit()
+
+    dataset = FontsDataset("ml/font/training_data")
+    print(dataset.get_stats())
+    train_loader = DataLoader(dataset, batch_size=256, shuffle=True, drop_last=False)  # TODO conclusively eval drop_last=True
+
+    model = Net(dataset.classes)
+    device = torch.device('cuda:0') if torch.cuda.is_available() else None
+    series = train_model(model, train_loader, 30, device)
+
+    model.to(torch.device('cpu'))
+    torch.save(model.state_dict(), "ml/font/model.pth")
+    with open("ml/font/classes.json", "w") as f:
+        json.dump(dataset.classes, f)
+
+    return series
 
 
 class FontsDataset(Dataset):
@@ -24,6 +43,7 @@ class FontsDataset(Dataset):
                 if not file.endswith(".png"):
                     continue
                 file_paths.append(path / file)
+        random.shuffle(file_paths)
 
         classes = {}
         for file in tqdm(file_paths, desc="Loading images"):
@@ -68,41 +88,158 @@ class Net(nn.Module):
         """
         super().__init__()
         self.classes = classes
+        # # 457287 parameters, 30 epochs, Total accuracy: 89.86%, Mean accuracy: 89.85%
+        # self.net = nn.Sequential(
+        #     nn.Conv2d(1, 8, 5),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Conv2d(8, 16, 5),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Conv2d(16, 32, 5),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Conv2d(32, 64, 5),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Flatten(),
+        #     nn.Linear(1024, 341),
+        #     nn.ReLU(),
+        #     nn.Linear(341, 113),
+        #     nn.ReLU(),
+        #     nn.Linear(113, len(classes)),
+        # )
+
+        # # 333518 parameters, 30 epochs, Total accuracy: 91.76%, Mean accuracy: 91.76%
+        # self.net = nn.Sequential(
+        #     nn.Conv2d(1, 8, 5),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Conv2d(8, 16, 5),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Conv2d(16, 32, 5),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Conv2d(32, 64, 5),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Flatten(),
+        #     nn.Dropout(),
+        #     nn.Linear(1024, 256),
+        #     nn.ReLU(),
+        #     nn.Dropout(),
+        #     nn.Linear(256, len(classes)),
+        # )
+
+        # # 140094 parameters, 30 epochs, Total accuracy: 93.07%, Mean accuracy: 93.06%
+        # self.net = nn.Sequential(
+        #     nn.Conv2d(1, 16, 3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Conv2d(16, 32, 3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Conv2d(32, 48, 3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Conv2d(48, 64, 3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Conv2d(64, 96, 3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Flatten(),
+        #     nn.Dropout(),
+        #     nn.Linear(384, 96),
+        #     nn.ReLU(),
+        #     nn.Dropout(),
+        #     nn.Linear(96, len(classes)),
+        # )
+
+        # # 140094 parameters, 30 epochs, Total accuracy: 93.14%, Mean accuracy: 93.13%
+        # self.net = nn.Sequential(
+        #     nn.Conv2d(1, 16, 3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Conv2d(16, 32, 3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Conv2d(32, 48, 3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Conv2d(48, 64, 3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Conv2d(64, 96, 3),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(2, 2),
+        #     nn.Flatten(),
+        #     nn.Dropout(),
+        #     nn.Linear(384, 96),
+        #     nn.ReLU(),
+        #     nn.Linear(96, len(classes)),
+        # )
+
+        # 140094 parameters, 30 epochs, Total accuracy: 93.95%, Mean accuracy: 93.94%; Total accuracy: 93.67%, Mean accuracy: 93.66%; Total accuracy: 93.81%, Mean accuracy: 93.80%
         self.net = nn.Sequential(
-            nn.Conv2d(1, 8, 5),
+            nn.Conv2d(1, 16, 3),
             nn.ReLU(),
             nn.MaxPool2d(2, 2),
-            nn.Conv2d(8, 16, 5),
+            nn.Conv2d(16, 32, 3),
             nn.ReLU(),
             nn.MaxPool2d(2, 2),
-            nn.Conv2d(16, 32, 5),
+            nn.Conv2d(32, 48, 3),
             nn.ReLU(),
             nn.MaxPool2d(2, 2),
-            nn.Conv2d(32, 64, 5),
+            nn.Conv2d(48, 64, 3),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(64, 96, 3),
             nn.ReLU(),
             nn.MaxPool2d(2, 2),
             nn.Flatten(),
-            nn.Linear(1024, 341),
+            nn.Dropout(),
+            nn.Linear(384, 96),
             nn.ReLU(),
-            nn.Linear(341, 113),
-            nn.ReLU(),
-            nn.Linear(113, len(classes)),
+            nn.Dropout(p=0.2),
+            nn.Linear(96, len(classes)),
         )
+
+        # # verify shapes match
+        # self.net(torch.randn(1, 1, 128, 128))
 
     def forward(self, x):
         return self.net(x)
 
 
 def train_model(model: Net, dataloader: DataLoader, epochs: int = 10, device=None):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    out_folder = Path(f"out/training/{timestamp}")
+    out_folder.mkdir(parents=True, exist_ok=True)
+
     if device:
         model.to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    # optimizer = torch.optim.SGD(model.parameters())
+    # scheduler = torch.optim.lr_scheduler.OneCycleLR(
+    #     optimizer, max_lr=0.025, steps_per_epoch=len(dataloader), epochs=epochs,
+    #     pct_start=0.2, anneal_strategy="linear", base_momentum=0.9, max_momentum=0.95, div_factor=10
+    # )
+
     model.train()
+
+    num_batches = len(dataloader)
+    series = {k: [] for k in ["lr", "momentum", "loss", "accuracy"]}
+    max_loss_gain = 0
+
     for epoch in range(epochs):
-        total_loss = 0
-        correct = 0
-        total = 0
+        epoch_loss = 0
+        epoch_correct = 0
+        epoch_total = 0
+        last_loss = None
+
         for x, y in dataloader:
             optimizer.zero_grad()
             if device:
@@ -111,22 +248,82 @@ def train_model(model: Net, dataloader: DataLoader, epochs: int = 10, device=Non
             output = model(x)
             loss = criterion(output, y)
             loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
 
+            loss = loss.item()
+            epoch_loss += loss
             preds = output.argmax(dim=1)
-            correct += (preds == y).sum().item()
-            total += y.size(0)
+            batch_correct = (preds == y).sum().item()
+            epoch_correct += batch_correct
+            batch_size = y.size(0)  # may not be equal to dataloader.batch_size for last batch
+            epoch_total += batch_size
 
-        print(f"Epoch {epoch+1:02d}: Loss={total_loss:.4f}, Accuracy={correct/total:.2%}")
+            series["lr"].append(optimizer.param_groups[0].get("lr"))
+            series["momentum"].append(optimizer.param_groups[0].get("momentum"))
+            series["loss"].append(loss)
+            series["accuracy"].append(batch_correct / batch_size)
+
+            if last_loss and (new_loss_gain := loss / last_loss) > max_loss_gain:
+                # high loss: store batch for inspection
+                max_loss_gain = new_loss_gain
+                _store_batch_images(x, out_folder)
+            last_loss = loss
+
+            optimizer.step()
+            # scheduler.step()
+
+        print(f"Epoch {epoch+1:02d}: Loss={epoch_loss / num_batches:.4f}, Accuracy={epoch_correct / epoch_total:.2%}")
+
+    return series
 
 
-def test_model(model: Net, samples: list[Image.Image]):
+def _store_batch_images(batch: torch.Tensor, out_folder: str | Path):
+    """Removes all existing batch images from the folder and stores new ones."""
+    for p in Path(out_folder).iterdir():
+        if not p.is_dir() and p.name.startswith("bad_batch_"):
+            p.unlink()
+    with util.tile_image.tile_image_writer(out_folder, "bad_batch_") as writer:
+        for img in [Image.fromarray((-crop[0] + 1) / 2 * 255) for crop in batch.cpu().numpy()]:
+            writer.write(img)
+
+
+def plot_training(series):
+    import os
+    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+    import matplotlib.pyplot as plt
+    fig, ax1 = plt.subplots()
+
+    ax1.plot(series["lr"], label="LR", color="tab:red", alpha=0.85)
+    ax1.set_xlabel('Steps')
+    ax1.tick_params('y', colors='tab:red')
+
+    ax2 = ax1.twinx()
+    ax2.plot(series["momentum"], label="momentum", color="tab:blue", alpha=0.85)
+    ax2.tick_params('y', colors='tab:blue')
+
+    ax3 = ax1.twinx()
+    ax3.plot(series["loss"], label="loss", color="tab:green", alpha=0.85)
+    ax3.spines['right'].set_position(('outward', 50))
+    ax3.tick_params('y', colors='tab:green')
+
+    ax4 = ax1.twinx()
+    ax4.plot(series["accuracy"], label="accuracy", color="tab:orange", alpha=0.85)
+    ax4.spines['right'].set_position(('outward', 100))
+    ax4.tick_params('y', colors='tab:orange')
+
+    legends = [ax.get_legend_handles_labels() for ax in (ax1, ax2, ax3, ax4)]
+    lines, labels = (list(itertools.chain(*sequences)) for sequences in zip(*legends))
+
+    plt.legend(lines, labels)
+    plt.tight_layout()
+    plt.show()
+
+
+def test_model(model, samples: list[Image.Image]):
     import matplotlib.pyplot as plt
     tensors = [img_to_tensor(img) for img in samples]
     tensors = torch.stack(tensors)
     with torch.no_grad():
-        outputs = model(tensors).cpu().numpy()
+        outputs = model._predict(tensors)
         mean = outputs.mean(axis=0)
         predicted = mean.argmax()
 
@@ -150,8 +347,8 @@ def run_model_test(pdf_path: str, model: Net = None, num_samples: int = 24):
     import extract
 
     if model is None:
-        import estimator
-        model = estimator.model
+        import estimator_torch as estimator
+        model = estimator.Model()
 
     with pdfplumber.open(pdf_path) as pdf:
         primary_font_raw = extract.get_primary_font(pdf)
@@ -170,25 +367,13 @@ def export_onnx(model_path="ml/font/model.pth", classes_path="ml/font/classes.js
     model.eval()
     input_tensor = torch.randn(1, 1, 128, 128)
     dynamic_axes = {'input' : {0 : 'batch_size'}, 'output' : {0 : 'batch_size'}}
-    torch.onnx.export(model, (input_tensor,), output_path, input_names=["input"],
+    torch.onnx.export(model, (input_tensor,), output_path, input_names=["input"], output_names=["output"],
                       dynamic_axes=dynamic_axes, dynamo=False)
 
 
 if __name__ == "__main__":
-    dataset = FontsDataset("ml/font/training_data")
-    print(dataset.get_stats())
-
-    train_loader = DataLoader(dataset, batch_size=32, shuffle=True)
-
-    model = Net(dataset.classes)
-    device = torch.device('cuda:0') if torch.cuda.is_available() else None
-    train_model(model, train_loader, 20, device)
-
-    model.to(torch.device('cpu'))
-    torch.save(model.state_dict(), "ml/font/model.pth")
-    with open("ml/font/classes.json", "w") as f:
-        json.dump(dataset.classes, f)
-
+    series = run_training()
     export_onnx()
+    plot_training(series)
 
-    # run_model_test("samples/encrypted/sample31.pdf")
+    # run_model_test("samples/scholar/5fb07e62-8cd9-4729-a276-6a8b4577c6bd.pdf")

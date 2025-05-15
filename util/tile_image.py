@@ -4,7 +4,7 @@ from PIL import Image
 
 
 class _TileImageWriter:
-    def __init__(self, folder: str | Path, max_width: int, image_mode="L"):
+    def __init__(self, folder: str | Path, prefix: str = None, max_width: int = 50000, image_mode="L"):
         """
         :param folder: Folder to save the images.
         :param max_width: Maximum width of the tiled image. If the total width exceeds this, it will save the current
@@ -12,6 +12,7 @@ class _TileImageWriter:
         :param image_mode: Image mode for the new image. Default is "L" (grayscale).
         """
         self.folder = Path(folder)
+        self.prefix = prefix
         self.max_width = max_width
         self.image_mode = image_mode
         self.images = []
@@ -41,7 +42,7 @@ class _TileImageWriter:
             new_image.paste(img, (i * self.image_size[0], 0))
             img.close()
 
-        filename = f"{uuid.uuid4()}.png"
+        filename = f"{self.prefix or ''}{uuid.uuid4()}.png"
         new_image.save(self.folder / filename)
         new_image.close()
 
@@ -49,14 +50,14 @@ class _TileImageWriter:
 
 
 @contextlib.contextmanager
-def tile_image_writer(folder: str | Path, max_width=50000):
+def tile_image_writer(folder: str | Path, prefix: str = None, max_width=50000):
     """
     Context manager for writing tiled images to a folder.
     :param folder: Folder to save the images.
     :param max_width: Maximum width of the tiled image. If the total width exceeds this, it will save the current image
                       and start a new one.
     """
-    writer = _TileImageWriter(folder, max_width)
+    writer = _TileImageWriter(folder, prefix, max_width)
     try:
         yield writer
     finally:

@@ -148,17 +148,18 @@ def _initialize_pool_process():
     sys.stderr = open(os.devnull, 'w')
 
 
-def _load_model():
+def _load_model(model_path: str = "ml/font/model.onnx", classes_path: str = "ml/font/classes.json"):
     if MODEL_TYPE == "TORCH":
         import estimator_torch
-        return estimator_torch.Model()
+        return estimator_torch.Model(model_path, classes_path)
     elif MODEL_TYPE == "ONNX":
         import estimator_onnx
-        return estimator_onnx.Model()
+        return estimator_onnx.Model(model_path, classes_path)
     else:
         raise ValueError(f"Unknown model type: {MODEL_TYPE}")
 
 
 if __name__ == "__main__":
-    # run_crop_data_eval(model=_load_model())
-    run_pdf_files_eval(num_samples=4)
+    # run_crop_data_eval(model=_load_model("ml/font/old_models/2025-05-14/model.onnx", "ml/font/old_models/2025-05-14/classes.json"))
+    run_crop_data_eval(model=_load_model())
+    # run_pdf_files_eval(num_samples=4)

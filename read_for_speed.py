@@ -67,5 +67,4 @@ if __name__ == "__main__":
     output_pdf_path = "out/pdf/sample34.pdf"
     metadata = run(input_pdf_path, output_pdf_path)
     # metadata = run_processes(input_pdf_path, output_pdf_path)
-    print("Metadata:", metadata)
     print(f"Overlay added successfully. Saved as {output_pdf_path}")
