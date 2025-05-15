@@ -1,8 +1,12 @@
 steps:
 - name: 'gcr.io/cloud-builders/docker'
+  entrypoint: 'bash'
+  args: ['-c', 'docker pull gcr.io/eye-guide/pdf-processor-service || exit 0']
+- name: 'gcr.io/cloud-builders/docker'
   args: [
             'build',
             '-t', 'gcr.io/eye-guide/pdf-processor-service',
+            '--cache-from', 'gcr.io/eye-guide/pdf-processor-service',
             '.'
         ]
 images:
