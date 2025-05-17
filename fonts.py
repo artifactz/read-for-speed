@@ -269,9 +269,9 @@ def _handle_times(identifier: str):
     """
     if identifier in _registered_fonts or identifier in _available_fonts:
         return identifier
-    if "TimesI" in identifier:
+    if identifier == "TimesNewRoman-Italic" or "TimesI" in identifier:
         return "TimesNewRoman-Italic"
-    if "TimesB" in identifier:
+    if identifier == "TimesNewRoman-Bold" or "TimesB" in identifier:
         return "TimesNewRoman-Bold"
     if "Times" in identifier:
         return "TimesNewRoman"
