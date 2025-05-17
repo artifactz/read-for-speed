@@ -59,18 +59,7 @@ def generate_text_overlay(input_pdf_file: IO | str):
 
     logging.info("Reading document.")
     with pdfplumber.open(input_pdf_file) as input_pdf:
-        # Check if font names are encrypted
-        primary_font_raw = extract.get_primary_font(input_pdf)
-        remapped_fonts = {}
-        if primary_font_raw is None:
-            primary_font = None
-        elif (is_primary_font_encrypted := _is_encrypted_font(primary_font_raw)):
-            logging.info(f"Memory usage before font estimation: {get_memory_usage_mb()}")
-            primary_font = run_font_estimation(input_pdf, primary_font_raw)
-            remapped_fonts = {primary_font_raw: primary_font}
-            logging.info(f"Memory usage after font estimation: {get_memory_usage_mb()}")
-        else:
-            primary_font = fonts.disambiguate_identifier(primary_font_raw) if primary_font_raw else None
+        primary_font_status, primary_font_raw, primary_font, remapped_fonts = _determine_primary_font(input_pdf)
 
         # Determine page size
         page_sizes = sorted((page.width, page.height) for page in input_pdf.pages)
@@ -104,10 +93,33 @@ def generate_text_overlay(input_pdf_file: IO | str):
         "total_words": total_words,
         "successful_words": successful_words,
         "success_ratio": success_ratio,
+        "primary_font_status": primary_font_status,
+        "primary_font_raw": primary_font_raw,
         "primary_font": primary_font,
         "has_encrypted_fonts": has_encrypted_fonts,
-        "is_primary_font_encrypted": is_primary_font_encrypted,
     }
+
+
+def _determine_primary_font(input_pdf):
+    primary_font_status = None
+    primary_font_raw = extract.get_primary_font(input_pdf)
+    primary_font = fonts.disambiguate_identifier(primary_font_raw) if primary_font_raw else None
+    remapped_fonts = {}
+
+    if primary_font_raw is None:
+        primary_font = None
+    elif _is_encrypted_font(primary_font_raw):
+        primary_font_status = "encrypted"
+    else:
+        primary_font_status = fonts.setup_boldened_font(primary_font_raw, 10, True)["state"]
+
+    if primary_font_status in ("encrypted", "missing"):
+        logging.info(f"Memory usage before font estimation: {get_memory_usage_mb()}")
+        primary_font = run_font_estimation(input_pdf, primary_font_raw)
+        remapped_fonts = {primary_font_raw: primary_font}
+        logging.info(f"Memory usage after font estimation: {get_memory_usage_mb()}")
+
+    return primary_font_status, primary_font_raw, primary_font, remapped_fonts
 
 
 def _is_encrypted_font(font_name: str) -> bool:
@@ -181,8 +193,10 @@ def _draw_page_overlay(
             is_primary_font = fonts.disambiguate_identifier(font_name) == primary_font
             use_extrabold = config["use_extrabold"] and is_primary_font
 
-            overlay_font = fonts.setup_boldened_font(canvas, font_name, font_size, use_extrabold)
-            if overlay_font["state"] != "ok":
+            overlay_font = fonts.setup_boldened_font(font_name, font_size, use_extrabold)
+            if overlay_font["state"] == "ok":
+                canvas.setFont(overlay_font["name"], overlay_font["size"])
+            else:
                 if overlay_font["state"] == "missing":
                     missing_fonts.add(overlay_font["name"])
                 current_font_is_valid = False
@@ -263,7 +277,12 @@ def group_words(chars, offset_threshold=1.0, non_word_chars=""" \t,.!?;:/()[]{}<
     return words
 
 
-def _split_emphasized_part(word_chars):
+def _split_emphasized_part(word_chars: list[dict]) -> tuple[list[dict], list[dict]]:
+    """
+    Splits a word into a prefix to be emphasized and a suffix containing the remaining characters.
+
+    :param word_chars: List of pdfplumber char dictionaries
+    """
     if len(word_chars) < 2:
         return [], word_chars
 

@@ -35,7 +35,7 @@ FONT_MAP = {
 
 # Reportlab comes with the Helvetica font, so we don't need to register it.
 _registered_fonts = ["Helvetica", "Helvetica-Bold", "Helvetica-BoldOblique"]
-_available_fonts = [p.stem for p in Path(FONT_DIR).glob("*.ttf")]
+_available_fonts = [p.stem for p in Path(FONT_DIR).glob("*.ttf")] + _registered_fonts
 _missing_fonts = []
 _remapped_fonts = {}
 
@@ -72,9 +72,9 @@ def get_char_width(char: str, font_name: str, font_size: float):
     return pdfmetrics.stringWidth(char, font_name, font_size)
 
 
-def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extrabold: bool) -> bool:
+def setup_boldened_font(pdf_font_identifier: str, size: float, use_extrabold: bool) -> bool:
     """
-    Sets up a boldened version of a font for overlay.
+    Disambiguates the font identifier, finds a bold version, and makes sure it's ready for use.
     """
     result = {}
     identifier = disambiguate_identifier(pdf_font_identifier)
@@ -96,18 +96,8 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extra
 
     identifier = _handle_helvetica(identifier)
 
-    if identifier in _missing_fonts:
+    if not register_font(identifier):
         return {"state": "missing", "name": identifier}
-
-    if identifier not in _registered_fonts:
-        try:
-            pdfmetrics.registerFont(TTFont(identifier, f"{FONT_DIR}/{identifier}.ttf"))
-        except TTFError:
-            _missing_fonts.append(identifier)
-            return {"state": "missing", "name": identifier}
-        _registered_fonts.append(identifier)
-
-    canvas.setFont(identifier, size)
 
     return {
         "state": "ok",
@@ -115,6 +105,20 @@ def setup_boldened_font(canvas, pdf_font_identifier: str, size: float, use_extra
         "size": size,
         **result
     }
+
+
+def register_font(identifier: str) -> bool:
+    if identifier in _registered_fonts:
+        return True
+    if identifier in _missing_fonts:
+        return False
+    try:
+        pdfmetrics.registerFont(TTFont(identifier, f"{FONT_DIR}/{identifier}.ttf"))
+    except TTFError:
+        _missing_fonts.append(identifier)
+        return False
+    _registered_fonts.append(identifier)
+    return True
 
 
 def _get_offsets(remapping: dict, font_size: float):
