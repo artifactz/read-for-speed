@@ -15,6 +15,7 @@ FONT_DIR = f"{os.path.dirname(__file__)}/fonts"
 # font name synonyms, i.e. mapping to font file name (keys allow regex)
 FONT_MAP = {
     "AGaramondPro": "AGaramond",
+    "ArialUnicodeMS": "Arial",
     "CMSS": "ComputerModernSans",
     "CMR": "ComputerModernSerif",
     "CMTI": "ComputerModernSerif-Italic",
@@ -35,7 +36,7 @@ FONT_MAP = {
 
 # Reportlab comes with the Helvetica font, so we don't need to register it.
 _registered_fonts = ["Helvetica", "Helvetica-Bold", "Helvetica-BoldOblique"]
-_available_fonts = [p.stem for p in Path(FONT_DIR).glob("*.ttf")] + _registered_fonts
+_available_fonts = set([p.stem for p in Path(FONT_DIR).glob("*.ttf")] + _registered_fonts)
 _missing_fonts = []
 _remapped_fonts = {}
 
@@ -165,7 +166,8 @@ def disambiguate_identifier(pdf_identifier: str) -> str:
     family_name = family_name.replace(" ", "")
 
     # Remove trailing digits (e.g. "Corbel3", not yet encountered though: "Corbel3-Bold")
-    family_name = re.sub(r"(\d+)$", "", family_name)
+    if not is_known_font(family_name):
+        family_name = re.sub(r"(\d+)$", "", family_name)
 
     # Split into family name and modifiers
     splitter = "-" if "-" in family_name else ","
@@ -271,7 +273,7 @@ def _handle_times(identifier: str):
     """
     This is a heuristic to fallback to Times New Roman when the font is unknown but contains "Times".
     """
-    if identifier in _registered_fonts or identifier in _available_fonts:
+    if is_known_font(identifier):
         return identifier
     if identifier == "TimesNewRoman-Italic" or "TimesI" in identifier:
         return "TimesNewRoman-Italic"
@@ -292,3 +294,9 @@ def _handle_helvetica(identifier: str):
     if identifier == "Helvetica-BoldItalic":
         return "Helvetica-BoldOblique"
     return identifier
+
+
+def is_known_font(identifier: str):
+    _init_remapped_fonts()
+    return any(identifier in collection or f"{identifier}-Bold" in collection
+               for collection in (FONT_MAP, _remapped_fonts, _available_fonts))
