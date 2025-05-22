@@ -179,6 +179,10 @@ def _draw_page_overlay(
         if not chars:
             continue
 
+        # Assume same font for every emphasized character of the word
+        if not all(c["fontname"] == chars[0]["fontname"] for c in chars):
+            continue
+
         total_words += 1
         font_size = chars[0]["size"]
         font_name = chars[0]["fontname"]
@@ -214,7 +218,8 @@ def _draw_page_overlay(
         char_lines = _get_char_lines(chars)
 
         if config["draw_bbox"]:
-            _draw_bbox(canvas, char_lines, remaining_chars)
+            bboxes = _get_bboxes(char_lines, remaining_chars)
+            _draw_bboxes(canvas, bboxes)
 
         for line_chars in char_lines:
             if config["typesetting_mode"] == "full_offset":
@@ -337,17 +342,28 @@ def _get_char_lines(chars) -> list[list[dict]]:
     return list(y_chars.values())
 
 
-def _draw_bbox(canvas: Canvas, char_lines: list, remaining_chars: list, top_pad_ratio=0.02):
+def _get_bboxes(char_lines: list[list[dict]], remaining_chars: list[dict], vertical_margin=0.5):
     """
-    Draws a filled bounding box on the characters to hide them (per line).
-    :param top_pad_ratio: Additionally moves the top upwards to compensate for the under-estimated height of some fonts.
+    Calculates a bounding box per line of characters.
+
+    :param char_lines: List of lines (lists) of characters (dicts).
+    :param remaining_chars: Remaining part of the word, that the bbox mustn't overlap with.
+    :param vertical_margin: Extra margin to add at the top and at the bottom when font extents are available.
     """
-    # Draw one box per line
+    # One box per line
     for i, line_chars in enumerate(char_lines):
-        left = min(char["x0"] for char in line_chars)
-        right = max(char["x1"] for char in line_chars)
-        top = max(char["y1"] for char in line_chars)
-        bottom = min(char["y0"] for char in line_chars)
+        left = min(char["matrix"][4] for char in line_chars)
+        right = max(char["matrix"][4] + char["width"] for char in line_chars)
+        extents = fonts.get_font_extents(line_chars[0]["fontname"])
+        if extents:
+            # Prefer font extents calculated with scripts/generate_font_extents.py
+            font_size = max(char["size"] for char in line_chars)
+            top = max(char["matrix"][5] for char in line_chars) + font_size * extents["ascent"] + vertical_margin
+            bottom = min(char["matrix"][5] for char in line_chars) - font_size * extents["descent"] - vertical_margin
+        else:
+            # Fall back to bounds from pdf (inaccurate)
+            top = max(char["y1"] for char in line_chars)
+            bottom = min(char["y0"] for char in line_chars)
 
         # Avoid drawing over the next character when their bounding boxes overlap
         if (
@@ -357,12 +373,15 @@ def _draw_bbox(canvas: Canvas, char_lines: list, remaining_chars: list, top_pad_
         ):
             right = remaining_chars[0]["x0"]
 
-        if top_pad_ratio:
-            top += (top - bottom) * top_pad_ratio
+        yield left, top, right, bottom
 
-        canvas.setFillColorRGB(255, 255, 255)
+
+def _draw_bboxes(canvas: Canvas, bboxes):
+    """Draws filled bounding boxes to hide underlaying characters."""
+    canvas.setFillColorRGB(255, 255, 255)
+    for left, top, right, bottom in bboxes:
         canvas.rect(left, bottom, right - left, top - bottom, stroke=0, fill=1)
-        canvas.setFillColorRGB(0, 0, 0)
+    canvas.setFillColorRGB(0, 0, 0)
 
 
 def _iter_offset_chars(line_chars, overlay_font, dy_mode="median"):

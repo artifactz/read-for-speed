@@ -300,3 +300,16 @@ def is_known_font(identifier: str):
     _init_remapped_fonts()
     return any(identifier in collection or f"{identifier}-Bold" in collection
                for collection in (FONT_MAP, _remapped_fonts, _available_fonts))
+
+
+@functools.cache
+def _get_font_extents():
+    import csv
+    with open("data/font_extents.csv") as f:
+        result = {d['fontname']: {k: float(v) for k, v in d.items() if k != 'fontname'} for d in csv.DictReader(f)}
+    return result
+
+
+def get_font_extents(identifier: str) -> dict:
+    """Returns a dictionary with the ascent and descent ratios of a font."""
+    return _get_font_extents().get(disambiguate_identifier(identifier))
