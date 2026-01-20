@@ -11,7 +11,7 @@ These serve as visual markers that can help your brain predict word endings, pla
 
 ## Live demo
 
-You can give it a try on [artifactz.github.io](https://artifactz.github.io/read-for-speed.html) :rocket:
+You can give it a try on [artifactz.github.io](https://artifactz.github.io/read-for-speed) :rocket:
 
 ## Example
 
