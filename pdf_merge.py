@@ -27,6 +27,8 @@ def _copy_metadata(reader: PdfReader, writer: PdfWriter):
     Copies metadata. Skips non-string values to avoid PyPDF2 TypeError.
     (Reader.metadata may contain non-string values, such as list, but then writer crashes during `write`.)
     """
+    if not reader.metadata:
+        return
     meta = {}
     for k in reader.metadata:  # cannot iterate over items() because their values are IndirectObject instead of str
         if isinstance(value := reader.metadata[k], str):
